@@ -1,11 +1,15 @@
-use rupicola_capture::{CaptureBackend, CaptureRequest, LinuxX11Backend};
+use rupicola_capture::{CaptureBackend, CaptureRequest, LinuxX11Backend, WebBackend};
 use rupicola_protocol::{
-    AnnotationBox, PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, TimeRange,
+    AnnotationBox, PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, TimeRange, UiAction,
     UnixProtocolClient, serve_once_unix,
 };
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -108,6 +112,7 @@ fn linux_x11_backend_captures_real_gtk4_app_and_annotates_in_rust() {
             args: vec![],
             viewport: [640, 480],
             warmup_ms: 1200,
+            actions: vec![],
             record_video_ms: Some(1000),
             annotations: vec![AnnotationBox {
                 bounds: Rect {
@@ -128,5 +133,85 @@ fn linux_x11_backend_captures_real_gtk4_app_and_annotates_in_rust() {
     assert!(out.annotated_png.as_ref().is_some_and(|p| p.is_file()));
     assert!(out.video_mp4.as_ref().is_some_and(|p| p.is_file()));
     assert_eq!(PROTOCOL_VERSION, 1);
+    let _ = fs::remove_dir_all(&out_dir);
+}
+
+#[test]
+fn web_backend_captures_real_crud_app_with_actions_video_and_annotations() {
+    let Some(backend) = WebBackend::discover("chromium") else {
+        return;
+    };
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let app_dir = root.join("examples/apps/crud-tasks");
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_flag = Arc::clone(&stop);
+    thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 1024];
+                let _ = stream.read(&mut buf);
+                if let Ok(body) = fs::read(app_dir.join("index.html")) {
+                    let hdr = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = stream.write_all(hdr.as_bytes());
+                    let _ = stream.write_all(&body);
+                }
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    });
+
+    let out_dir = std::env::temp_dir().join("rupicola-capture-web-out");
+    let _ = fs::remove_dir_all(&out_dir);
+    let out = backend
+        .capture(&CaptureRequest {
+            command: format!("http://{addr}/index.html"),
+            args: vec![],
+            viewport: [1280, 720],
+            warmup_ms: 0,
+            actions: vec![
+                UiAction::TypeText {
+                    target_id: "new-task".into(),
+                    text: "Captured by WebBackend".into(),
+                },
+                UiAction::Click {
+                    target_id: "add-btn".into(),
+                },
+            ],
+            record_video_ms: Some(1000),
+            annotations: vec![AnnotationBox {
+                bounds: Rect {
+                    x: 345.0,
+                    y: 258.0,
+                    width: 590.0,
+                    height: 38.0,
+                },
+                label: "create-form".into(),
+                color: Some("#c24518".into()),
+                time_range: None,
+            }],
+            output_dir: out_dir.clone(),
+        })
+        .unwrap();
+    stop.store(true, Ordering::Relaxed);
+
+    assert!(out.screenshot_png.is_file());
+    assert!(out.annotated_png.as_ref().is_some_and(|p| p.is_file()));
+    assert!(out.video_mp4.as_ref().is_some_and(|p| p.is_file()));
+    let snap = out.snapshot.expect("live DOM UiSnapshot");
+    assert_eq!(
+        snap.find_by_id("counter").unwrap().label.as_deref(),
+        Some("3 remaining · 4 total")
+    );
     let _ = fs::remove_dir_all(&out_dir);
 }

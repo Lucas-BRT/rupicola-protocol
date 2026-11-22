@@ -1,4 +1,4 @@
-use crate::annotate::annotate_png;
+use crate::annotate::finalize_media;
 use crate::backend::{CaptureBackend, CaptureOutput, CaptureRequest};
 use std::fs;
 use std::process::{Command, Stdio};
@@ -118,19 +118,12 @@ impl CaptureBackend for LinuxX11Backend {
             return Err(format!("ffmpeg screenshot exited with {status}"));
         }
 
-        let annotated_png = if request.annotations.is_empty() {
-            None
-        } else {
-            let ann_path = request.output_dir.join("preview-annotated.png");
-            annotate_png(&screenshot_png, &ann_path, &request.annotations, 1.0)?;
-            Some(ann_path)
-        };
-
-        Ok(CaptureOutput {
+        finalize_media(
+            &request.output_dir,
             screenshot_png,
-            annotated_png,
             video_mp4,
-            snapshot: None,
-        })
+            &request.annotations,
+            None,
+        )
     }
 }

@@ -18,4 +18,9 @@ Open `http://127.0.0.1:8082` in your browser.
 
 ![Annotated component boxes](media/preview-annotated.png)
 
-- Interactive walkthrough video (calculation and unit mode toggle): [walkthrough.mp4](media/walkthrough.mp4)
+- Interactive walkthrough video (clean): [walkthrough.mp4](media/walkthrough.mp4)
+- Interactive walkthrough video (annotated): [walkthrough-annotated.mp4](media/walkthrough-annotated.mp4)
+
+![Walkthrough motion preview (clean)](media/walkthrough.gif)
+
+![Walkthrough motion preview (annotated)](media/walkthrough-annotated.gif)

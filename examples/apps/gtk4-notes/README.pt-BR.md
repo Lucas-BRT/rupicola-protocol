@@ -23,4 +23,9 @@ GSK_RENDERER=cairo GDK_BACKEND=x11 DISPLAY=:99 cargo run --manifest-path protoco
 
 ![Componentes anotados no GTK4 Notes](media/preview-annotated.png)
 
-- Vídeo capturado em background (`Xvfb` + `ffmpeg x11grab`): [walkthrough.mp4](media/walkthrough.mp4)
+- Vídeo capturado em background (limpo): [walkthrough.mp4](media/walkthrough.mp4)
+- Vídeo capturado em background (anotado): [walkthrough-annotated.mp4](media/walkthrough-annotated.mp4)
+
+![Prévia em movimento (limpa)](media/walkthrough.gif)
+
+![Prévia em movimento (anotada)](media/walkthrough-annotated.gif)

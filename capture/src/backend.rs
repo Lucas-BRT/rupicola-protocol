@@ -1,16 +1,20 @@
-use rupicola_protocol::{AnnotationBox, UiSnapshot};
+use rupicola_protocol::{AnnotationBox, UiAction, UiSnapshot};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Declarative capture request executed by a [`CaptureBackend`].
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CaptureRequest {
+    /// Executable path (for desktop backends) or target URL (for web backends).
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
     pub viewport: [u32; 2],
     #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
+    /// Optional sequence of UI actions executed before taking the final snapshot.
+    #[serde(default)]
+    pub actions: Vec<UiAction>,
     /// When `Some(ms)` with `ms > 0`, also records an MP4 walkthrough clip.
     #[serde(default)]
     pub record_video_ms: Option<u64>,
@@ -31,6 +35,12 @@ pub struct CaptureOutput {
     pub annotated_png: Option<PathBuf>,
     #[serde(default)]
     pub video_mp4: Option<PathBuf>,
+    #[serde(default)]
+    pub annotated_video_mp4: Option<PathBuf>,
+    #[serde(default)]
+    pub video_gif: Option<PathBuf>,
+    #[serde(default)]
+    pub annotated_video_gif: Option<PathBuf>,
     #[serde(default)]
     pub snapshot: Option<UiSnapshot>,
 }
