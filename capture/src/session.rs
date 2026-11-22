@@ -23,6 +23,31 @@ const fn default_warmup_ms() -> u64 {
     DEFAULT_WARMUP_MS
 }
 
+/// Whether `id` is safe as a file name: ASCII letters, digits, `-` and `_`.
+#[must_use]
+pub fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+/// `id` if it is a safe file name.
+///
+/// # Errors
+///
+/// An [`ErrorClass::Environment`] error naming the bad id; plans are checked with this
+/// before anything starts.
+pub fn checked_id(id: &str) -> Result<&str, CaptureError> {
+    if valid_id(id) {
+        Ok(id)
+    } else {
+        Err(CaptureError::environment(format!(
+            "`{id}` is not a valid id: use letters, digits, - and _"
+        )))
+    }
+}
+
 /// What is captured: an executable (desktop backends) or a URL (web backends).
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Target {
@@ -354,14 +379,19 @@ pub struct Bundle {
 ///
 /// # Errors
 ///
-/// An [`ErrorClass::Environment`] error before anything starts when the backend lacks a
-/// capability the plan needs and the plan is not degradable; otherwise the first failing
+/// An [`ErrorClass::Environment`] error before anything starts when an id is not a safe
+/// file name, or when the backend lacks a capability the plan needs and the plan is not degradable; otherwise the first failing
 /// step's error, after the session has been finished.
 pub fn run_plan(
     backend: &dyn CaptureBackend,
     plan: &Plan,
     out: &Path,
 ) -> Result<Bundle, CaptureError> {
+    for step in &plan.steps {
+        if let Step::Checkpoint { id } | Step::StopRecording { id } = step {
+            checked_id(id)?;
+        }
+    }
     let missing = backend.capabilities().missing(plan.needs());
     if !missing.is_empty() && !plan.allow_degraded {
         return Err(CaptureError::environment(format!(
