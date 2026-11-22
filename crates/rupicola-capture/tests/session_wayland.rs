@@ -4,8 +4,8 @@
 #![cfg(unix)]
 
 use rupicola_capture::{
-    LinuxWaylandBackend,
-    session::{Environment, Plan, Step, Target, WaitCondition, run_plan},
+    session::{Environment, Plan, Step, Target, WaitCondition},
+    sync::{LinuxWaylandBackend, run_plan},
 };
 use rupicola_protocol::UiAction;
 use std::{fs, process::Command};

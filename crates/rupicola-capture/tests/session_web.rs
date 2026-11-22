@@ -1,8 +1,8 @@
 //! The web backend as a session: one browser page serves actions, checkpoints and a clip.
 
 use rupicola_capture::{
-    WebBackend,
-    session::{ColorScheme, Environment, ErrorClass, Plan, Step, Target, WaitCondition, run_plan},
+    session::{ColorScheme, Environment, ErrorClass, Plan, Step, Target, WaitCondition},
+    sync::{WebBackend, WebDiscovery as _, run_plan},
 };
 use rupicola_protocol::UiAction;
 use std::{

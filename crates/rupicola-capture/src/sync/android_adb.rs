@@ -1,47 +1,19 @@
+use super::{CaptureBackend, CaptureSession, tool::ToolCheck as _};
+use crate::backend::AndroidAdbBackend;
+use crate::backend::android_adb::{ADB, RECORDING_FLUSH_MS};
+use crate::backend::artifacts::Artifacts;
+use crate::backend::tool::Tool;
 use crate::session::{
-    self, Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target,
-    WaitCondition,
+    Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
 };
-use crate::tool::Tool;
 use rupicola_protocol::UiAction;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::path::Path;
+use std::process::Child;
 use std::thread;
 use std::time::Duration;
 
-const ADB: &str = "adb";
-/// Where the device keeps a recording until it is pulled.
-const REMOTE_RECORDING: &str = "/sdcard/rupicola-walkthrough.mp4";
-/// Longest clip `screenrecord` allows, in seconds.
-const MAX_RECORDING_SECONDS: &str = "180";
-/// Signal that makes `screenrecord` finish and close its file.
-const INTERRUPT_SIGNAL: &str = "-2";
-/// Program on the device that is asked to stop.
-const SCREENRECORD: &str = "screenrecord";
-/// Time the device gets to write the end of a recording after the interrupt.
-const RECORDING_FLUSH: Duration = Duration::from_millis(500);
-
-/// Mobile Android capture backend over `adb` (`screencap` + `screenrecord`).
-///
-/// It captures whatever the device shows; the session's target is not launched.
-#[derive(Clone, Debug, Default)]
-pub struct AndroidAdbBackend {
-    /// Optional device serial (`adb -s <serial>`).
-    pub serial: Option<String>,
-}
-
-impl AndroidAdbBackend {
-    fn adb_cmd(&self) -> Command {
-        let mut cmd = Command::new(ADB);
-        if let Some(ref serial) = self.serial {
-            cmd.args(["-s", serial]);
-        }
-        cmd
-    }
-}
-
-impl session::CaptureBackend for AndroidAdbBackend {
+impl CaptureBackend for AndroidAdbBackend {
     fn id(&self) -> &'static str {
         "mobile-android-adb"
     }
@@ -55,11 +27,10 @@ impl session::CaptureBackend for AndroidAdbBackend {
         _target: &Target,
         _environment: &Environment,
         out: &Path,
-    ) -> Result<Box<dyn session::CaptureSession>, CaptureError> {
+    ) -> Result<Box<dyn CaptureSession>, CaptureError> {
         Tool(ADB).require()?;
         let state = self
-            .adb_cmd()
-            .arg("get-state")
+            .get_state()
             .output()
             .map_err(|e| CaptureError::environment(format!("run {ADB}: {e}")))?;
         if !state.status.success() {
@@ -72,7 +43,7 @@ impl session::CaptureBackend for AndroidAdbBackend {
             .map_err(|e| CaptureError::environment(format!("create {}: {e}", out.display())))?;
         Ok(Box::new(AndroidSession {
             backend: self.clone(),
-            out: out.to_path_buf(),
+            artifacts: Artifacts::new(out),
             recording: None,
         }))
     }
@@ -80,7 +51,7 @@ impl session::CaptureBackend for AndroidAdbBackend {
 
 struct AndroidSession {
     backend: AndroidAdbBackend,
-    out: PathBuf,
+    artifacts: Artifacts,
     recording: Option<Child>,
 }
 
@@ -91,28 +62,16 @@ impl AndroidSession {
         )
     }
 
-    /// Runs an `adb` command, hiding its output.
-    fn run(&self, args: &[&str]) -> Result<bool, CaptureError> {
-        self.backend
-            .adb_cmd()
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .map_err(|e| CaptureError::environment(format!("run {ADB}: {e}")))
-    }
-
     fn discard_recording(&mut self) {
         if let Some(mut child) = self.recording.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let _ = self.run(&["shell", "rm", "-f", REMOTE_RECORDING]);
+        let _ = self.backend.remove().status();
     }
 }
 
-impl session::CaptureSession for AndroidSession {
+impl CaptureSession for AndroidSession {
     fn perform(&mut self, action: &UiAction) -> Result<(), CaptureError> {
         match action {
             UiAction::WaitMs { ms } => {
@@ -136,11 +95,10 @@ impl session::CaptureSession for AndroidSession {
     }
 
     fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
-        let png = self.out.join(format!("{}.png", session::checked_id(id)?));
+        let png = self.artifacts.png(id)?;
         let output = self
             .backend
-            .adb_cmd()
-            .args(["exec-out", "screencap", "-p"])
+            .screencap()
             .output()
             .map_err(|e| CaptureError::environment(format!("run {ADB} screencap: {e}")))?;
         if !output.status.success() || output.stdout.is_empty() {
@@ -164,16 +122,7 @@ impl session::CaptureSession for AndroidSession {
         }
         let child = self
             .backend
-            .adb_cmd()
-            .args([
-                "shell",
-                SCREENRECORD,
-                "--time-limit",
-                MAX_RECORDING_SECONDS,
-                REMOTE_RECORDING,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .record()
             .spawn()
             .map_err(|e| CaptureError::environment(format!("run {ADB} screenrecord: {e}")))?;
         self.recording = Some(child);
@@ -181,25 +130,25 @@ impl session::CaptureSession for AndroidSession {
     }
 
     fn stop_recording(&mut self, id: &str) -> Result<Clip, CaptureError> {
-        let mp4 = self.out.join(format!("{}.mp4", session::checked_id(id)?));
+        let mp4 = self.artifacts.mp4(id)?;
         let Some(mut child) = self.recording.take() else {
             return Err(CaptureError::environment("no recording is running"));
         };
-        let stopped = self.run(&["shell", "pkill", INTERRUPT_SIGNAL, SCREENRECORD])?;
+        let stopped = self
+            .backend
+            .stop_record()
+            .status()
+            .map_err(|e| CaptureError::environment(format!("run {ADB}: {e}")))?
+            .success();
         let _ = child.wait();
-        thread::sleep(RECORDING_FLUSH);
-        let pulled = stopped && {
-            let remote = REMOTE_RECORDING;
-            self.backend
-                .adb_cmd()
-                .args(["pull", remote])
-                .arg(&mp4)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
+        thread::sleep(Duration::from_millis(RECORDING_FLUSH_MS));
+        let pulled = stopped
+            && self
+                .backend
+                .pull(&mp4)
                 .status()
-                .is_ok_and(|status| status.success())
-        };
-        let _ = self.run(&["shell", "rm", "-f", REMOTE_RECORDING]);
+                .is_ok_and(|status| status.success());
+        let _ = self.backend.remove().status();
         if pulled && mp4.is_file() {
             Ok(Clip {
                 id: id.to_owned(),

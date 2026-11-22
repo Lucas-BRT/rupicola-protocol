@@ -1,4 +1,6 @@
 use super::*;
+use crate::session::{Capability, ErrorClass, Plan, Step};
+use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 /// Records every call so tests can check order and cleanup.

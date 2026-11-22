@@ -11,7 +11,15 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# Pick how captures run; none is on by default. `sync` blocks on its processes.
+sync = []
+
 [dependencies]
 rupicola-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+# Turns a feature on for this crate's own tests.
+rupicola-capture = { path = ".", features = ["sync"] }

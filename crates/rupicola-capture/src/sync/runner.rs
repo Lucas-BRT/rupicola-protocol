@@ -1,6 +1,5 @@
-use super::{
-    Bundle, Capability, CaptureBackend, CaptureError, CaptureSession, Plan, Step, checked_id,
-};
+use super::{CaptureBackend, CaptureSession};
+use crate::session::{Bundle, Capability, CaptureError, Plan, Step, checked_id};
 use std::{collections::HashSet, path::Path};
 
 /// Runs `plan` on `backend`, writing files under `out`.

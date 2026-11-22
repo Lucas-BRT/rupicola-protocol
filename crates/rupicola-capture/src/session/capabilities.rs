@@ -37,7 +37,7 @@ impl Capability {
         }
     }
 
-    pub(super) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Actions,
         Self::Pointer,
         Self::UiTree,

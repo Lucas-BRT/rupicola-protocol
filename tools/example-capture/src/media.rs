@@ -1,10 +1,8 @@
 //! Runs a capture plan and turns its screenshot and clip into the example media:
 //! `preview.png`, `walkthrough.gif` and, when there are annotations, their annotated twins.
 
-use rupicola_capture::session::{
-    CaptureBackend, Environment, Plan, Step, Target, WaitCondition, run_plan,
-};
-use rupicola_capture::{annotate_png, annotate_video, mp4_to_gif};
+use rupicola_capture::session::{Environment, Plan, Step, Target, WaitCondition};
+use rupicola_capture::sync::{CaptureBackend, annotate_png, annotate_video, mp4_to_gif, run_plan};
 use rupicola_protocol::{AnnotationBox, UiAction};
 use std::fs;
 use std::path::PathBuf;

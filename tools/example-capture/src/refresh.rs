@@ -4,10 +4,10 @@
 
 use crate::media::Walkthrough;
 use crate::support::serve_dir;
-#[cfg(unix)]
-use rupicola_capture::LinuxX11Backend;
-use rupicola_capture::WebBackend;
 use rupicola_capture::session::{Environment, Target};
+#[cfg(unix)]
+use rupicola_capture::sync::LinuxX11Backend;
+use rupicola_capture::sync::{WebBackend, WebDiscovery as _};
 use rupicola_protocol::{AnnotationBox, AnnotationShape, AnnotationStyle, Rect, UiAction};
 use std::path::Path;
 #[cfg(unix)]

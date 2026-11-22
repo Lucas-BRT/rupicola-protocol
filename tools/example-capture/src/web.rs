@@ -1,7 +1,7 @@
 //! Capture the project workspace served at the supplied URL.
 use crate::media::Walkthrough;
-use rupicola_capture::WebBackend;
 use rupicola_capture::session::{Environment, Target};
+use rupicola_capture::sync::{WebBackend, WebDiscovery as _};
 use rupicola_protocol::UiAction;
 
 const VIEWPORT: [u32; 2] = [1280, 720];

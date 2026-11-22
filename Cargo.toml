@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/rupicola-protocol", "crates/rupicola-capture", "tools/example-capture"]
-default-members = ["crates/rupicola-protocol", "crates/rupicola-capture"]
+default-members = ["crates/rupicola-protocol", "crates/rupicola-capture", "tools/example-capture"]
 exclude = ["examples/apps/medium/notes/gtk4"]
 resolver = "2"
 

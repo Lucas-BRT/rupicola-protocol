@@ -1,7 +1,7 @@
 //! Capture a built native workspace using Xvfb and `FFmpeg`.
 use crate::media::Walkthrough;
-use rupicola_capture::LinuxX11Backend;
 use rupicola_capture::session::{Environment, Target};
+use rupicola_capture::sync::LinuxX11Backend;
 
 const DISPLAY: u16 = 98;
 const VIEWPORT: [u32; 2] = [1024, 768];

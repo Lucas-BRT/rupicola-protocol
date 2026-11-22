@@ -1,9 +1,8 @@
+use rupicola_capture::session::{Environment, ErrorClass, Plan, Step, Target, WaitCondition};
 #[cfg(unix)]
-use rupicola_capture::LinuxX11Backend;
-use rupicola_capture::session::{
-    self, Environment, ErrorClass, Plan, Step, Target, WaitCondition, run_plan,
-};
-use rupicola_capture::{AndroidAdbBackend, annotate_png, annotate_video};
+use rupicola_capture::sync::LinuxX11Backend;
+use rupicola_capture::sync::{self, run_plan};
+use rupicola_capture::sync::{AndroidAdbBackend, annotate_png, annotate_video};
 use rupicola_protocol::{
     AnnotationBox, AnnotationKeyframe, AnnotationShape, AnnotationStyle, Easing, LabelPosition,
     Rect, TimeRange,
@@ -186,13 +185,13 @@ fn annotates_a_session_screenshot_and_clip() {
 #[test]
 fn android_session_reports_a_missing_adb_or_device_as_an_environment_error() {
     let backend = AndroidAdbBackend::default();
-    assert_eq!(session::CaptureBackend::id(&backend), "mobile-android-adb");
+    assert_eq!(sync::CaptureBackend::id(&backend), "mobile-android-adb");
     let target = Target {
         command: String::new(),
         args: vec![],
     };
     let out = std::env::temp_dir().join("rupicola-capture-android-out");
-    match session::CaptureBackend::start(&backend, &target, &Environment::new(VIEWPORT), &out) {
+    match sync::CaptureBackend::start(&backend, &target, &Environment::new(VIEWPORT), &out) {
         // A device is attached: the session must be usable and end cleanly.
         Ok(session) => session.finish().unwrap(),
         Err(error) => assert_eq!(error.class, ErrorClass::Environment),

@@ -4,8 +4,8 @@
 #![cfg(unix)]
 
 use rupicola_capture::{
-    GtkBroadwayBackend, WebBackend,
-    session::{Environment, Plan, Step, Target, run_plan},
+    session::{Environment, Plan, Step, Target},
+    sync::{GtkBroadwayBackend, WebBackend, WebDiscovery as _, run_plan},
 };
 use std::{fs, path::PathBuf, process::Command};
 

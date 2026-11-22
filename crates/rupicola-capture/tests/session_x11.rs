@@ -3,8 +3,8 @@
 #![cfg(unix)]
 
 use rupicola_capture::{
-    LinuxX11Backend,
-    session::{Environment, Plan, Step, Target, WaitCondition, run_plan},
+    session::{Environment, Plan, Step, Target, WaitCondition},
+    sync::{LinuxX11Backend, run_plan},
 };
 use std::{fs, process::Command};
 
