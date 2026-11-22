@@ -1,6 +1,5 @@
-use crate::backend::CaptureOutput;
-use rupicola_protocol::{AnnotationBox, UiSnapshot};
-use std::path::{Path, PathBuf};
+use rupicola_protocol::AnnotationBox;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 fn build_drawbox_filters(
@@ -131,54 +130,4 @@ pub fn mp4_to_gif(input_mp4: &Path, output_gif: &Path, max_width: u32) -> Result
         return Err(format!("ffmpeg gif conversion exited with {status}"));
     }
     Ok(())
-}
-
-/// Generates annotated PNG/MP4 and inline GIFs for a captured screenshot and optional video.
-///
-/// # Errors
-///
-/// Returns an error if annotation rendering fails.
-pub(crate) fn finalize_media(
-    output_dir: &Path,
-    screenshot_png: PathBuf,
-    video_mp4: Option<PathBuf>,
-    annotations: &[AnnotationBox],
-    snapshot: Option<UiSnapshot>,
-) -> Result<CaptureOutput, String> {
-    let annotated_png = if annotations.is_empty() {
-        None
-    } else {
-        let ann_path = output_dir.join("preview-annotated.png");
-        annotate_png(&screenshot_png, &ann_path, annotations, 1.0)?;
-        Some(ann_path)
-    };
-
-    let mut video_gif = None;
-    let mut annotated_video_mp4 = None;
-    let mut annotated_video_gif = None;
-    if let Some(ref mp4) = video_mp4 {
-        let gif = output_dir.join("walkthrough.gif");
-        if mp4_to_gif(mp4, &gif, 640).is_ok() {
-            video_gif = Some(gif);
-        }
-        if !annotations.is_empty() {
-            let ann_mp4 = output_dir.join("walkthrough-annotated.mp4");
-            annotate_video(mp4, &ann_mp4, annotations, 1.0)?;
-            let ann_gif = output_dir.join("walkthrough-annotated.gif");
-            if mp4_to_gif(&ann_mp4, &ann_gif, 640).is_ok() {
-                annotated_video_gif = Some(ann_gif);
-            }
-            annotated_video_mp4 = Some(ann_mp4);
-        }
-    }
-
-    Ok(CaptureOutput {
-        screenshot_png,
-        annotated_png,
-        video_mp4,
-        annotated_video_mp4,
-        video_gif,
-        annotated_video_gif,
-        snapshot,
-    })
 }

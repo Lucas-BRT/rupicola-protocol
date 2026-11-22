@@ -1,24 +1,31 @@
 //! Capture a built native workspace using Xvfb and `FFmpeg`.
-use rupicola_capture::{CaptureBackend, CaptureRequest, LinuxX11Backend};
+use crate::media::Walkthrough;
+use rupicola_capture::LinuxX11Backend;
+use rupicola_capture::session::{Environment, Target};
+
+const DISPLAY: u16 = 98;
+const VIEWPORT: [u32; 2] = [1024, 768];
+const WARMUP_MS: u64 = 2500;
+const HOLD_MS: u64 = 1500;
+
 pub fn capture(framework: &str, command: &str) -> Result<(), String> {
-    let output = (LinuxX11Backend { display_num: 98 }).capture(&CaptureRequest {
-        command: command.into(),
-        args: vec![],
-        viewport: [1024, 768],
-        warmup_ms: 2500,
+    let mut environment = Environment::new(VIEWPORT);
+    environment.warmup_ms = WARMUP_MS;
+    Walkthrough {
+        target: Target {
+            command: command.into(),
+            args: vec![],
+        },
+        environment,
         actions: vec![],
-        record_video_ms: Some(1500),
+        hold_ms: HOLD_MS,
         annotations: vec![],
-        output_dir: crate::root()
+        out: crate::root()
             .join("examples/apps/advanced/project-workspace")
             .join(framework)
             .join("media"),
-    })?;
-    if output.video_gif.is_none() {
-        return Err("GIF conversion failed; MP4 retained".into());
     }
-    if let Some(path) = output.video_mp4 {
-        std::fs::remove_file(path).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    .record(&LinuxX11Backend {
+        display_num: DISPLAY,
+    })
 }

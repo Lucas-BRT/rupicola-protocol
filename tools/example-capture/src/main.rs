@@ -1,3 +1,4 @@
+mod media;
 #[cfg(unix)]
 mod native;
 mod refresh;
