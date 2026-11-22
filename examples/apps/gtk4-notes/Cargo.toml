@@ -1,0 +1,8 @@
+[package]
+name = "gtk4-notes"
+version = "0.1.0"
+edition = "2024"
+authors = ["LucasBRT <lucasbritodepaula@proton.me>"]
+publish = false
+
+[workspace]

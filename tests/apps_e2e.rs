@@ -263,22 +263,28 @@ fn real_gtk4_desktop_app_runs_in_background_and_renders_frame() {
         .arg("ffmpeg")
         .output()
         .is_ok_and(|o| o.status.success());
-    let py = Path::new("/usr/bin/python3");
-    let has_gtk4 = py.is_file()
-        && Command::new(py)
-            .args([
-                "-c",
-                "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk",
-            ])
-            .output()
-            .is_ok_and(|o| o.status.success());
+    let has_gtk4 = Command::new("pkg-config")
+        .args(["--exists", "gtk4"])
+        .output()
+        .is_ok_and(|o| o.status.success());
     if !has_xvfb || !has_ffmpeg || !has_gtk4 {
-        eprintln!("skipping GTK4 desktop e2e test: Xvfb, ffmpeg, or PyGObject GTK4 unavailable");
+        eprintln!("skipping GTK4 desktop e2e test: Xvfb, ffmpeg, or gtk4 unavailable");
         return;
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let app_script = manifest_dir.join("examples/apps/gtk4-notes/app.py");
+    let app_manifest = manifest_dir.join("examples/apps/gtk4-notes/Cargo.toml");
+    let target_dir = std::env::temp_dir().join("rupicola-gtk4-target");
+    let build = Command::new("cargo")
+        .args(["build", "--offline", "--quiet", "--manifest-path"])
+        .arg(&app_manifest)
+        .arg("--target-dir")
+        .arg(&target_dir)
+        .status()
+        .expect("build gtk4-notes binary");
+    assert!(build.success(), "gtk4-notes failed to compile");
+
+    let app_bin = target_dir.join("debug/gtk4-notes");
     let out_png = std::env::temp_dir().join("rupicola-gtk4-e2e.png");
     let _ = fs::remove_file(&out_png);
 
@@ -290,8 +296,7 @@ fn real_gtk4_desktop_app_runs_in_background_and_renders_frame() {
         .expect("spawn Xvfb");
     thread::sleep(std::time::Duration::from_millis(500));
 
-    let mut app = Command::new(py)
-        .arg(&app_script)
+    let mut app = Command::new(&app_bin)
         .env("GDK_BACKEND", "x11")
         .env("GSK_RENDERER", "cairo")
         .env("DISPLAY", ":96")

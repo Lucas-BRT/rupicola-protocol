@@ -2,19 +2,19 @@
 
 > Language: **English** | [Português (BR)](README.pt-BR.md)
 
-Native Linux desktop application built with **GTK 4** (`PyGObject`) demonstrating `Gtk.ApplicationWindow`, `Gtk.Entry`, `Gtk.Button`, and `Gtk.ListBox` with zero Rupicola code inside the application.
+Native Linux desktop application written in **pure Rust** linking `libgtk-4` directly (zero external crates, zero Rupicola code inside the application).
 
 ## How to run
 
 ```sh
-python3 protocol/examples/apps/gtk4-notes/app.py
+cargo run --manifest-path protocol/examples/apps/gtk4-notes/Cargo.toml
 ```
 
 Run headless in the background using `Xvfb`:
 
 ```sh
-Xvfb :99 -screen 0 1280x720x24 &
-GDK_BACKEND=x11 DISPLAY=:99 python3 protocol/examples/apps/gtk4-notes/app.py
+Xvfb :99 -screen 0 640x480x24 &
+GSK_RENDERER=cairo GDK_BACKEND=x11 DISPLAY=:99 cargo run --manifest-path protocol/examples/apps/gtk4-notes/Cargo.toml
 ```
 
 ## Captured Media
