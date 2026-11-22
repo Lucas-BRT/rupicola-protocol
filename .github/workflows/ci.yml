@@ -34,8 +34,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: rupicola-protocol
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
   tests:
     name: Nextest (${{ matrix.os }}, Rust 1.99.1)
@@ -55,4 +55,4 @@ jobs:
         with:
           shared-key: rupicola-protocol
       - uses: taiki-e/install-action@nextest
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --locked --workspace

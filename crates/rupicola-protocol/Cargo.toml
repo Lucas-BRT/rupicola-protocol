@@ -1,0 +1,17 @@
+[package]
+name = "rupicola-protocol"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.99"
+authors = ["LucasBRT <lucasbritodepaula@proton.me>"]
+description = "Lightweight middleware micro-protocol for UI tree snapshots, bounding boxes, and remote actions"
+repository = "https://github.com/Lucas-BRT/rupicola-protocol"
+keywords = ["ui", "protocol", "testing", "desktop", "web"]
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
