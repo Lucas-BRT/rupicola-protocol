@@ -16,6 +16,7 @@ As mensagens usam NDJSON (um objeto JSON por linha) via `stdio` ou Unix domain s
 - [Tasks CRUD (`examples/apps/crud-tasks`)](examples/apps/crud-tasks/README.pt-BR.md)
 - [Pomodoro Timer (`examples/apps/pomodoro-timer`)](examples/apps/pomodoro-timer/README.pt-BR.md)
 - [Unit Calculator (`examples/apps/unit-calculator`)](examples/apps/unit-calculator/README.pt-BR.md)
+- [GTK4 Notes (`examples/apps/gtk4-notes`, Desktop Linux Nativo)](examples/apps/gtk4-notes/README.pt-BR.md)
 
 ```sh
 cargo test

@@ -251,3 +251,85 @@ fn real_example_apps_run_and_emit_live_protocol_snapshots() {
         .expect("unit converter in live DOM");
     assert_eq!(conv.label.as_deref(), Some("64 px = 4.00 rem (base 16px)"));
 }
+
+#[cfg(unix)]
+#[test]
+fn real_gtk4_desktop_app_runs_in_background_and_renders_frame() {
+    let has_xvfb = Command::new("which")
+        .arg("Xvfb")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    let has_ffmpeg = Command::new("which")
+        .arg("ffmpeg")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    let py = Path::new("/usr/bin/python3");
+    let has_gtk4 = py.is_file()
+        && Command::new(py)
+            .args([
+                "-c",
+                "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk",
+            ])
+            .output()
+            .is_ok_and(|o| o.status.success());
+    if !has_xvfb || !has_ffmpeg || !has_gtk4 {
+        eprintln!("skipping GTK4 desktop e2e test: Xvfb, ffmpeg, or PyGObject GTK4 unavailable");
+        return;
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let app_script = manifest_dir.join("examples/apps/gtk4-notes/app.py");
+    let out_png = std::env::temp_dir().join("rupicola-gtk4-e2e.png");
+    let _ = fs::remove_file(&out_png);
+
+    let mut xvfb = Command::new("Xvfb")
+        .args([":96", "-screen", "0", "640x480x24"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn Xvfb");
+    thread::sleep(std::time::Duration::from_millis(500));
+
+    let mut app = Command::new(py)
+        .arg(&app_script)
+        .env("GDK_BACKEND", "x11")
+        .env("GSK_RENDERER", "cairo")
+        .env("DISPLAY", ":96")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn GTK4 Notes app");
+    thread::sleep(std::time::Duration::from_millis(1200));
+
+    let grab = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "x11grab",
+            "-video_size",
+            "640x480",
+            "-i",
+            ":96",
+            "-frames:v",
+            "1",
+        ])
+        .arg(&out_png)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("run ffmpeg x11grab");
+
+    let _ = app.kill();
+    let _ = app.wait();
+    let _ = xvfb.kill();
+    let _ = xvfb.wait();
+
+    assert!(grab.success(), "ffmpeg x11grab failed");
+    let bytes = fs::read(&out_png).expect("read captured GTK4 PNG");
+    let _ = fs::remove_file(&out_png);
+    assert!(
+        bytes.len() > 5_000,
+        "expected rendered GTK4 window PNG, got {} bytes",
+        bytes.len()
+    );
+}
