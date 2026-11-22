@@ -1,16 +1,19 @@
-use rupicola_capture::{
-    AndroidAdbBackend, CaptureBackend, CaptureRequest, GtkBroadwayBackend, LinuxX11Backend,
-    WebBackend,
-};
+#[cfg(unix)]
+use rupicola_capture::{AndroidAdbBackend, GtkBroadwayBackend, LinuxX11Backend};
+use rupicola_capture::{CaptureBackend, CaptureRequest, WebBackend};
 use rupicola_protocol::{
     AnnotationBox, AnnotationKeyframe, AnnotationShape, AnnotationStyle, Easing, LabelPosition,
-    PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, TimeRange, UiAction,
-    UnixProtocolClient, serve_once_unix,
+    Rect, TimeRange, UiAction,
+};
+#[cfg(unix)]
+use rupicola_protocol::{
+    PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, UnixProtocolClient, serve_once_unix,
 };
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
