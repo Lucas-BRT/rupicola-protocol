@@ -26,7 +26,7 @@ fn rect_validation_and_hidpi_scaling_edge_cases() {
     );
     assert!(
         !Rect {
-            x: f32::NAN,
+            x: f64::NAN,
             y: 0.0,
             width: 10.0,
             height: 10.0
@@ -36,7 +36,7 @@ fn rect_validation_and_hidpi_scaling_edge_cases() {
     assert!(
         !Rect {
             x: 0.0,
-            y: f32::INFINITY,
+            y: f64::INFINITY,
             width: 10.0,
             height: 10.0
         }
@@ -53,7 +53,7 @@ fn rect_validation_and_hidpi_scaling_edge_cases() {
     // Negative origin clamps cleanly to 0; non-positive/NaN scale falls back to 1.0.
     assert_eq!(rect.to_pixel_box(2.0), [0, 25, 200, 64]);
     assert_eq!(rect.to_pixel_box(0.0), [0, 13, 100, 32]);
-    assert_eq!(rect.to_pixel_box(f32::NAN), [0, 13, 100, 32]);
+    assert_eq!(rect.to_pixel_box(f64::NAN), [0, 13, 100, 32]);
 }
 
 #[test]

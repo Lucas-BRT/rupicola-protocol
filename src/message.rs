@@ -31,7 +31,8 @@ pub enum ProtocolResponse {
     },
     Pong,
     Snapshot {
-        snapshot: UiSnapshot,
+        /// Boxed: a snapshot is far larger than every other response.
+        snapshot: Box<UiSnapshot>,
     },
     ActionAck {
         ok: bool,

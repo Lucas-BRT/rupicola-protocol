@@ -41,7 +41,7 @@ fn serve_dir(dir: PathBuf) -> (String, Arc<AtomicBool>) {
     (format!("http://{addr}/index.html"), stop)
 }
 
-fn ann(x: f32, y: f32, width: f32, height: f32, label: &str) -> AnnotationBox {
+fn ann(x: f64, y: f64, width: f64, height: f64, label: &str) -> AnnotationBox {
     AnnotationBox {
         bounds: Rect {
             x,

@@ -31,8 +31,8 @@ pub enum AnnotationShape {
     Ellipse,
     Spotlight,
     Arrow {
-        from: [f32; 2],
-        to: [f32; 2],
+        from: [f64; 2],
+        to: [f64; 2],
     },
 }
 
@@ -53,11 +53,11 @@ pub struct AnnotationStyle {
     #[serde(default = "default_stroke_color")]
     pub stroke_color: String,
     #[serde(default = "default_stroke_width")]
-    pub stroke_width: f32,
+    pub stroke_width: f64,
     #[serde(default)]
     pub fill_color: Option<String>,
     #[serde(default = "default_border_radius")]
-    pub border_radius: f32,
+    pub border_radius: f64,
     #[serde(default)]
     pub dashed: bool,
     #[serde(default)]
@@ -68,11 +68,11 @@ fn default_stroke_color() -> String {
     "#c24518".to_owned()
 }
 
-const fn default_stroke_width() -> f32 {
+const fn default_stroke_width() -> f64 {
     2.0
 }
 
-const fn default_border_radius() -> f32 {
+const fn default_border_radius() -> f64 {
     6.0
 }
 
@@ -101,7 +101,7 @@ pub enum Easing {
 
 impl Easing {
     #[must_use]
-    pub fn apply(self, t: f32) -> f32 {
+    pub fn apply(self, t: f64) -> f64 {
         let clamped = t.clamp(0.0, 1.0);
         match self {
             Self::Linear => clamped,
@@ -157,7 +157,7 @@ impl AnnotationBox {
     #[must_use]
     #[expect(
         clippy::cast_precision_loss,
-        reason = "video timestamps fit comfortably in f32 mantissa for interpolation"
+        reason = "video timestamps fit comfortably in f64 mantissa for interpolation"
     )]
     pub fn bounds_at(&self, timestamp_ms: u64) -> Rect {
         if self.keyframes.is_empty() {
@@ -178,7 +178,7 @@ impl AnnotationBox {
                 if span == 0 {
                     return b.bounds;
                 }
-                let raw_t = (timestamp_ms - a.timestamp_ms) as f32 / span as f32;
+                let raw_t = (timestamp_ms - a.timestamp_ms) as f64 / span as f64;
                 let t = a.easing.apply(raw_t);
                 return Rect {
                     x: a.bounds.x + (b.bounds.x - a.bounds.x) * t,
@@ -193,17 +193,13 @@ impl AnnotationBox {
 
     /// Normalizes bounds at `timestamp_ms` into `[left%, top%, width%, height%]` for CSS overlays.
     #[must_use]
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "viewport dimensions fit comfortably in f32 mantissa"
-    )]
-    pub fn percent_box_at(&self, timestamp_ms: u64, viewport: [u32; 2]) -> Option<[f32; 4]> {
+    pub fn percent_box_at(&self, timestamp_ms: u64, viewport: [u32; 2]) -> Option<[f64; 4]> {
         let bounds = self.bounds_at(timestamp_ms);
         if viewport[0] == 0 || viewport[1] == 0 || !bounds.is_valid() {
             return None;
         }
-        let vw = viewport[0] as f32;
-        let vh = viewport[1] as f32;
+        let vw = f64::from(viewport[0]);
+        let vh = f64::from(viewport[1]);
         Some([
             (bounds.x / vw) * 100.0,
             (bounds.y / vh) * 100.0,
@@ -214,7 +210,7 @@ impl AnnotationBox {
 
     /// Convenience wrapper for static screenshots (`timestamp_ms = 0`).
     #[must_use]
-    pub fn to_percent_box(&self, viewport: [u32; 2]) -> Option<[f32; 4]> {
+    pub fn to_percent_box(&self, viewport: [u32; 2]) -> Option<[f64; 4]> {
         self.percent_box_at(0, viewport)
     }
 }

@@ -106,7 +106,7 @@ pub fn handle_session<R: BufRead, W: Write>(
             },
             ProtocolRequest::Ping => ProtocolResponse::Pong,
             ProtocolRequest::GetSnapshot => ProtocolResponse::Snapshot {
-                snapshot: snap.clone(),
+                snapshot: Box::new(snap.clone()),
             },
             ProtocolRequest::PerformAction { action } => match action {
                 UiAction::Click { target_id } if target_id == "counter-btn" => {

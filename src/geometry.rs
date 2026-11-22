@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 /// Logical rectangle in window or viewport coordinates.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 impl Rect {
@@ -28,7 +28,7 @@ impl Rect {
         clippy::cast_sign_loss,
         reason = "clamped non-negative pixel bounds"
     )]
-    pub fn to_pixel_box(&self, scale_factor: f32) -> [u32; 4] {
+    pub fn to_pixel_box(&self, scale_factor: f64) -> [u32; 4] {
         let scale = if scale_factor.is_finite() && scale_factor > 0.0 {
             scale_factor
         } else {

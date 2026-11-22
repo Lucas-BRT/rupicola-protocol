@@ -75,7 +75,7 @@ pub struct UiSnapshot {
     #[serde(default)]
     pub title: Option<String>,
     pub viewport: [u32; 2],
-    pub scale_factor: f32,
+    pub scale_factor: f64,
     pub timestamp_ms: u64,
     pub root: WidgetNode,
 }

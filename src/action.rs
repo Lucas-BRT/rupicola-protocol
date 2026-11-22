@@ -8,8 +8,8 @@ pub enum UiAction {
         target_id: String,
     },
     ClickAt {
-        x: f32,
-        y: f32,
+        x: f64,
+        y: f64,
     },
     Hover {
         target_id: String,
@@ -28,8 +28,8 @@ pub enum UiAction {
     },
     Scroll {
         target_id: Option<String>,
-        dx: f32,
-        dy: f32,
+        dx: f64,
+        dy: f64,
     },
     WaitMs {
         ms: u64,

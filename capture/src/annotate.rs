@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 fn build_drawbox_filters(
     boxes: &[AnnotationBox],
-    scale_factor: f32,
+    scale_factor: f64,
     temporal: bool,
 ) -> Vec<String> {
     boxes
@@ -43,7 +43,7 @@ pub fn annotate_png(
     input_png: &Path,
     output_png: &Path,
     boxes: &[AnnotationBox],
-    scale_factor: f32,
+    scale_factor: f64,
 ) -> Result<(), String> {
     let filters = build_drawbox_filters(boxes, scale_factor, false);
     if filters.is_empty() {
@@ -76,7 +76,7 @@ pub fn annotate_video(
     input_mp4: &Path,
     output_mp4: &Path,
     boxes: &[AnnotationBox],
-    scale_factor: f32,
+    scale_factor: f64,
 ) -> Result<(), String> {
     let filters = build_drawbox_filters(boxes, scale_factor, true);
     if filters.is_empty() {
