@@ -1,6 +1,5 @@
 # Basic Examples (Hello World — `rupicola-protocol`)
 
-> Language: **English** | [Português (BR)](README.pt-BR.md)
 
 Minimal examples demonstrating the [`rupicola-protocol`](../../Cargo.toml) micro-protocol across supported toolkits and environments:
 

@@ -117,7 +117,8 @@ unsafe extern "C" fn on_activate(app: *mut c_void, _user_data: *mut c_void) {
 
 fn main() {
     unsafe {
-        let app = gtk_application_new(c("dev.rupicola.example.Gtk4Notes").as_ptr(), 0);
+        // G_APPLICATION_NON_UNIQUE (1 << 5) allows parallel headless test instances.
+        let app = gtk_application_new(c("dev.rupicola.example.Gtk4Notes").as_ptr(), 32);
         g_signal_connect_data(
             app,
             c("activate").as_ptr(),

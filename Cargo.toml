@@ -1,6 +1,26 @@
+[workspace]
+members = [".", "capture"]
+exclude = ["examples/apps/gtk4-notes"]
+resolver = "2"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+[profile.dev]
+debug = 0
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+
 [package]
 name = "rupicola-protocol"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 authors = ["LucasBRT <lucasbritodepaula@proton.me>"]
@@ -9,8 +29,8 @@ repository = "https://github.com/Lucas-BRT/rupicola-protocol"
 keywords = ["ui", "protocol", "testing", "desktop", "web"]
 publish = false
 
-[lints.clippy]
-pedantic = { level = "warn", priority = -1 }
+[lints]
+workspace = true
 
 [dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }
