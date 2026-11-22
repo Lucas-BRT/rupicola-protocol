@@ -1,0 +1,4 @@
+body { font: 1rem system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; color: #243044; background: #f3f5f8; }
+output { display: block; font-size: 3rem; font-variant-numeric: tabular-nums; margin: 1rem 0; }
+button { font: inherit; padding: .65rem 1rem; cursor: pointer; }
+button:focus-visible { outline: 3px solid #155ac1; outline-offset: 3px; }

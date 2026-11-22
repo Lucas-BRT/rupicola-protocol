@@ -1,0 +1,17 @@
+[package]
+name = "rupicola-capture"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.99"
+authors = ["LucasBRT <lucasbritodepaula@proton.me>"]
+description = "Headless UI capture backends (Linux X11/Xvfb, Wayland, Web) and visual annotation engine for rupicola-protocol"
+repository = "https://github.com/Lucas-BRT/rupicola-protocol"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+rupicola-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
