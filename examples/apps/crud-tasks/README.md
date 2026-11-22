@@ -1,19 +1,21 @@
-# Tasks CRUD (`examples/crud-tasks`)
+# Tasks CRUD (`examples/apps/crud-tasks`)
 
-Aplicação clássica de lista de tarefas (CRUD) demonstrando formulários, filtros por estado (`All` / `Active` / `Completed`), checkboxes, remoção de itens e estado vazio.
+> Language: **English** | [Português (BR)](README.pt-BR.md)
 
-## Como rodar
+Classic task-list CRUD application demonstrating form submission, state filters (`All` / `Active` / `Completed`), checkboxes, item removal, and empty states without any Rupicola instrumentation in the app source.
+
+## How to run
 
 ```sh
-python3 -m http.server 8080 --directory examples/crud-tasks
+python3 -m http.server 8080 --directory protocol/examples/apps/crud-tasks
 ```
 
-Abra `http://127.0.0.1:8080` no navegador.
+Open `http://127.0.0.1:8080` in your browser.
 
-## Capturas geradas
+## Captured Media
 
-![Preview da interface](media/preview.png)
+![UI preview](media/preview.png)
 
-![Preview com anotações de componentes (`rupicola annotate`)](media/preview-annotated.png)
+![Annotated component boxes](media/preview-annotated.png)
 
-- Vídeo do fluxo interativo (criar tarefa, concluir, filtrar): [walkthrough.mp4](media/walkthrough.mp4)
+- Interactive walkthrough video (add task, toggle complete, filter): [walkthrough.mp4](media/walkthrough.mp4)

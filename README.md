@@ -1,5 +1,7 @@
 # rupicola-protocol
 
+> Language: **English** | [Português (BR)](README.pt-BR.md)
+
 Lightweight middleware micro-protocol for UI widget tree snapshots, bounding boxes, and remote interaction across Web DOM and Desktop toolkits (`Iced`, `COSMIC`, `egui`, `GTK4`, `Tauri`, `Qt`).
 
 ## Transport & Wire Format
@@ -9,6 +11,11 @@ Messages use NDJSON (one JSON object per line) over `stdio` or Unix domain socke
 - `ProtocolResponse`: `HandshakeAck`, `Pong`, `Snapshot`, `ActionAck`, `Error`
 
 ## Examples & Tests
+
+- [Basic hello-world examples](examples/basic/README.md)
+- [Tasks CRUD (`examples/apps/crud-tasks`)](examples/apps/crud-tasks/README.md)
+- [Pomodoro Timer (`examples/apps/pomodoro-timer`)](examples/apps/pomodoro-timer/README.md)
+- [Unit Calculator (`examples/apps/unit-calculator`)](examples/apps/unit-calculator/README.md)
 
 ```sh
 cargo test

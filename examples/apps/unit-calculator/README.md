@@ -1,19 +1,21 @@
-# Unit Calculator (`examples/unit-calculator`)
+# Unit Calculator (`examples/apps/unit-calculator`)
 
-Aplicação clássica de calculadora + conversor de unidades (`px ↔ rem` e `°C ↔ °F`) demonstrando grid de botões, display monoespaçado, cálculo de expressão e histórico.
+> Language: **English** | [Português (BR)](README.pt-BR.md)
 
-## Como rodar
+Classic calculator + unit converter (`px ↔ rem` and `°C ↔ °F`) demonstrating keypad grid layout, monospace display, expression evaluation, and operation history without any Rupicola instrumentation in the app source.
+
+## How to run
 
 ```sh
-python3 -m http.server 8082 --directory examples/unit-calculator
+python3 -m http.server 8082 --directory protocol/examples/apps/unit-calculator
 ```
 
-Abra `http://127.0.0.1:8082` no navegador.
+Open `http://127.0.0.1:8082` in your browser.
 
-## Capturas geradas
+## Captured Media
 
-![Preview da interface](media/preview.png)
+![UI preview](media/preview.png)
 
-![Preview com anotações de componentes (`rupicola annotate`)](media/preview-annotated.png)
+![Annotated component boxes](media/preview-annotated.png)
 
-- Vídeo do fluxo interativo (cálculo e troca de conversor): [walkthrough.mp4](media/walkthrough.mp4)
+- Interactive walkthrough video (calculation and unit mode toggle): [walkthrough.mp4](media/walkthrough.mp4)

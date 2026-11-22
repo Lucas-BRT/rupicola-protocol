@@ -1,19 +1,21 @@
-# Pomodoro Timer (`examples/pomodoro-timer`)
+# Pomodoro Timer (`examples/apps/pomodoro-timer`)
 
-Aplicação clássica de timer Pomodoro demonstrando SVG animado (`stroke-dashoffset`), alternância de presets (`Focus` / `Short` / `Long`), estado temporal (`Start` / `Pause` / `Reset`) e troca de tema escuro/claro.
+> Language: **English** | [Português (BR)](README.pt-BR.md)
 
-## Como rodar
+Classic Pomodoro timer application demonstrating animated SVG progress (`stroke-dashoffset`), preset switching (`Focus` / `Short` / `Long`), timer state (`Start` / `Pause` / `Reset`), and light/dark theme toggling without any Rupicola instrumentation in the app source.
+
+## How to run
 
 ```sh
-python3 -m http.server 8081 --directory examples/pomodoro-timer
+python3 -m http.server 8081 --directory protocol/examples/apps/pomodoro-timer
 ```
 
-Abra `http://127.0.0.1:8081` no navegador.
+Open `http://127.0.0.1:8081` in your browser.
 
-## Capturas geradas
+## Captured Media
 
-![Preview da interface](media/preview.png)
+![UI preview](media/preview.png)
 
-![Preview com anotações de componentes (`rupicola annotate`)](media/preview-annotated.png)
+![Annotated component boxes](media/preview-annotated.png)
 
-- Vídeo do fluxo interativo (timer em execução, troca de modo e tema): [walkthrough.mp4](media/walkthrough.mp4)
+- Interactive walkthrough video (running timer, mode switch, theme toggle): [walkthrough.mp4](media/walkthrough.mp4)

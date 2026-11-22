@@ -1,6 +1,8 @@
 # Basic Examples (Hello World — `rupicola-protocol`)
 
-Exemplos mínimos que demonstram o micro-protocolo [`rupicola-protocol`](../../Cargo.toml) nos principais toolkits e ambientes suportados:
+> Language: **English** | [Português (BR)](README.pt-BR.md)
+
+Minimal examples demonstrating the [`rupicola-protocol`](../../Cargo.toml) micro-protocol across supported toolkits and environments:
 
 - `linux_iced` (`ToolkitKind::Iced`)
 - `linux_gtk4` (`ToolkitKind::Gtk4`)
@@ -8,9 +10,9 @@ Exemplos mínimos que demonstram o micro-protocolo [`rupicola-protocol`](../../C
 - `web_html` (`ToolkitKind::WebDom`)
 - `web_react` (`ToolkitKind::WebDom`)
 
-## Como rodar manualmente
+## Running manually
 
-Imprimir o `UiSnapshot` inicial em JSON:
+Print the initial `UiSnapshot` JSON:
 
 ```sh
 cargo run -p rupicola-protocol --example linux_iced
@@ -20,14 +22,14 @@ cargo run -p rupicola-protocol --example web_html
 cargo run -p rupicola-protocol --example web_react
 ```
 
-Rodar sessão interativa NDJSON via `stdio` ou Unix socket:
+Run an interactive NDJSON session over `stdio` or Unix domain socket:
 
 ```sh
 cargo run -p rupicola-protocol --example linux_iced -- --stdio
 cargo run -p rupicola-protocol --example linux_libcosmic -- --socket /tmp/rupicola-cosmic.sock
 ```
 
-Rodar os testes automatizados que consomem estes exemplos:
+Run the automated integration tests backed by these examples:
 
 ```sh
 cargo test -p rupicola-protocol --test hello_worlds
