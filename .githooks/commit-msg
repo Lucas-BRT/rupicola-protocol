@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MSG_FILE="${1:?missing commit message file}"
+FIRST_LINE="$(head -n1 "$MSG_FILE" | tr -d '\r')"
+
+if [[ "$FIRST_LINE" =~ ^(Merge|Revert\ \") ]]; then
+  exit 0
+fi
+
+PATTERN='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._-]+\))?(!)?: .+'
+if [[ ! "$FIRST_LINE" =~ $PATTERN ]]; then
+  echo "Error: commit message does not follow Conventional Commits." >&2
+  echo "Received: $FIRST_LINE" >&2
+  echo "Expected: <type>(<optional scope>): <description>" >&2
+  exit 1
+fi

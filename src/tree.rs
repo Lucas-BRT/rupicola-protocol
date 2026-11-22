@@ -17,7 +17,7 @@ pub enum ToolkitKind {
 
 /// Interactive state flags reported by a widget or DOM node.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "wire flags representing independent widget states"
 )]

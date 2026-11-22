@@ -23,7 +23,7 @@ impl Rect {
 
     /// Converts logical coordinates into rounded physical pixel `[x, y, w, h]`.
     #[must_use]
-    #[allow(
+    #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "clamped non-negative pixel bounds"
