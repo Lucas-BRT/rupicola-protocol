@@ -2,6 +2,7 @@
 
 use super::CaptureSession;
 use crate::backend::artifacts::Artifacts;
+use crate::backend::messages::{NO_RECORDING, RECORDING_RUNNING};
 use crate::backend::xvfb::{PointerMove, RECORDING_FILE, Screen, XVFB_SETTLE_MS};
 use crate::session::{CaptureError, Checkpoint, Clip, WaitCondition};
 use rupicola_protocol::UiAction;
@@ -177,7 +178,7 @@ impl CaptureSession for XvfbSession {
 
     fn start_recording(&mut self) -> Result<(), CaptureError> {
         if self.recording.is_some() {
-            return Err(CaptureError::environment("a recording is already running"));
+            return Err(CaptureError::environment(RECORDING_RUNNING));
         }
         let mut command = self.screen.grab(true);
         command
@@ -199,7 +200,7 @@ impl CaptureSession for XvfbSession {
         let mut child = self
             .recording
             .take()
-            .ok_or_else(|| CaptureError::environment("no recording is running"))?;
+            .ok_or_else(|| CaptureError::environment(NO_RECORDING))?;
         // `q` on stdin makes ffmpeg finish the file properly.
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(b"q");

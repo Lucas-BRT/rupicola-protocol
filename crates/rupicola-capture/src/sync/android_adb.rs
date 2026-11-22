@@ -2,6 +2,7 @@ use super::{CaptureBackend, CaptureSession, tool::ToolCheck as _};
 use crate::backend::AndroidAdbBackend;
 use crate::backend::android_adb::{ADB, RECORDING_FLUSH_MS};
 use crate::backend::artifacts::Artifacts;
+use crate::backend::messages::{NO_RECORDING, NO_UI_TREE_WAIT, RECORDING_RUNNING};
 use crate::backend::tool::Tool;
 use crate::session::{
     Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
@@ -88,9 +89,9 @@ impl CaptureSession for AndroidSession {
                 thread::sleep(Duration::from_millis(*ms));
                 Ok(())
             }
-            WaitCondition::Visible { .. } | WaitCondition::Text { .. } => Err(
-                CaptureError::environment("this backend has no UI tree to wait on"),
-            ),
+            WaitCondition::Visible { .. } | WaitCondition::Text { .. } => {
+                Err(CaptureError::environment(NO_UI_TREE_WAIT))
+            }
         }
     }
 
@@ -118,7 +119,7 @@ impl CaptureSession for AndroidSession {
 
     fn start_recording(&mut self) -> Result<(), CaptureError> {
         if self.recording.is_some() {
-            return Err(CaptureError::environment("a recording is already running"));
+            return Err(CaptureError::environment(RECORDING_RUNNING));
         }
         let child = self
             .backend
@@ -132,7 +133,7 @@ impl CaptureSession for AndroidSession {
     fn stop_recording(&mut self, id: &str) -> Result<Clip, CaptureError> {
         let mp4 = self.artifacts.mp4(id)?;
         let Some(mut child) = self.recording.take() else {
-            return Err(CaptureError::environment("no recording is running"));
+            return Err(CaptureError::environment(NO_RECORDING));
         };
         let stopped = self
             .backend

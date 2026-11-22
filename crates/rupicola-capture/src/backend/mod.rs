@@ -12,6 +12,7 @@ pub(crate) mod gtk_broadway;
 pub(crate) mod linux_wayland;
 #[cfg(unix)]
 pub(crate) mod linux_x11;
+pub(crate) mod messages;
 pub(crate) mod tool;
 pub(crate) mod web;
 pub(crate) mod web_driver;

@@ -1,14 +1,15 @@
 use super::{CaptureBackend, CaptureSession};
 use crate::backend::WebBackend;
 use crate::backend::artifacts::Artifacts;
+use crate::backend::messages::{DRIVER_EXITED, DRIVER_NO_PIPES, NO_FRAMES};
 use crate::backend::web::{Encoder, FRAME_LIST, FRAMES_DIR};
 use crate::backend::web_driver::{DriverReply, DriverRequest, Frame};
 use crate::session::{
     Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
 };
-use rupicola_protocol::{UiAction, read_ndjson, write_ndjson};
+use rupicola_protocol::UiAction;
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout};
 
@@ -69,7 +70,7 @@ impl CaptureBackend for WebBackend {
             .spawn()
             .map_err(|e| CaptureError::environment(format!("run node: {e}")))?;
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-            return Err(CaptureError::environment("the driver has no pipes"));
+            return Err(CaptureError::environment(DRIVER_NO_PIPES));
         };
         let mut session = WebSession {
             child,
@@ -93,11 +94,23 @@ struct WebSession {
 impl WebSession {
     /// Sends `request` and waits for the driver's answer.
     fn call(&mut self, request: &DriverRequest) -> Result<DriverReply, CaptureError> {
-        write_ndjson(&mut self.stdin, request)
+        let line = request
+            .to_line()
             .map_err(|e| CaptureError::environment(format!("write to the driver: {e}")))?;
-        read_ndjson::<_, DriverReply>(&mut self.stdout)
+        self.stdin
+            .write_all(&line)
+            .and_then(|()| self.stdin.flush())
+            .map_err(|e| CaptureError::environment(format!("write to the driver: {e}")))?;
+        let mut reply = String::new();
+        let read = self
+            .stdout
+            .read_line(&mut reply)
+            .map_err(|e| CaptureError::environment(format!("read from the driver: {e}")))?;
+        if read == 0 {
+            return Err(CaptureError::environment(DRIVER_EXITED));
+        }
+        DriverReply::from_line(&reply)
             .map_err(|e| CaptureError::environment(format!("read from the driver: {e}")))?
-            .ok_or_else(|| CaptureError::environment("the driver exited unexpectedly"))?
             .into_result()
     }
 
@@ -162,7 +175,7 @@ impl CaptureSession for WebSession {
         let reply = self.call(&DriverRequest::StopRecording)?;
         let dir = self.artifacts.file(FRAMES_DIR);
         let encoded = if reply.frames.is_empty() {
-            Err(CaptureError::environment("the recording has no frames"))
+            Err(CaptureError::environment(NO_FRAMES))
         } else {
             Self::encode(&reply.frames, &mp4, &dir.join(FRAME_LIST))
         };

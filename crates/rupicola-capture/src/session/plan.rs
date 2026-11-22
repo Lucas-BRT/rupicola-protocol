@@ -1,8 +1,10 @@
 use super::{
     Capabilities, Capability, Checkpoint, Clip, DEFAULT_SCALE, Environment, Target, WaitCondition,
 };
+use super::{CaptureError, checked_id};
 use rupicola_protocol::UiAction;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// One step of a [`Plan`].
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -16,6 +18,12 @@ pub enum Step {
 }
 
 impl Step {
+    /// Whether the backend lacks something this step needs.
+    #[must_use]
+    pub fn is_skipped(&self, missing: &[Capability]) -> bool {
+        missing.iter().any(|item| self.needs().contains(*item))
+    }
+
     /// Capabilities this step needs beyond a screenshot.
     #[must_use]
     pub const fn needs(&self) -> Capabilities {
@@ -65,6 +73,62 @@ impl Plan {
             needed = needed.union(step.needs());
         }
         needed
+    }
+}
+
+/// What running a plan on a backend will leave out.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Preflight {
+    /// What the plan asks for and the backend cannot do.
+    pub missing: Vec<Capability>,
+    /// One message per skipped request, for the bundle.
+    pub warnings: Vec<String>,
+}
+
+impl Plan {
+    /// Checks the plan against what a backend can do, before anything starts.
+    ///
+    /// # Errors
+    ///
+    /// An [`super::ErrorClass::Environment`] error when an id is not a safe file name, an
+    /// id repeats, or the backend lacks a capability the plan needs and the plan is not
+    /// degradable.
+    pub fn preflight(
+        &self,
+        backend: &str,
+        capabilities: Capabilities,
+    ) -> Result<Preflight, CaptureError> {
+        let mut checkpoints = HashSet::new();
+        let mut recordings = HashSet::new();
+        for step in &self.steps {
+            let (id, ids) = match step {
+                Step::Checkpoint { id } => (id, &mut checkpoints),
+                Step::StopRecording { id } => (id, &mut recordings),
+                _ => continue,
+            };
+            checked_id(id)?;
+            if !ids.insert(id) {
+                return Err(CaptureError::environment(format!(
+                    "duplicate artifact id: {id}"
+                )));
+            }
+        }
+        let missing = capabilities.missing(self.needs());
+        if !missing.is_empty() && !self.allow_degraded {
+            return Err(CaptureError::environment(format!(
+                "backend {backend} lacks: {}",
+                missing
+                    .iter()
+                    .map(|item| item.name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        let warnings = missing
+            .iter()
+            .map(|item| format!("backend {backend} lacks {}; skipped", item.name()))
+            .collect();
+        Ok(Preflight { missing, warnings })
     }
 }
 

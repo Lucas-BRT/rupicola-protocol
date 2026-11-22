@@ -3,6 +3,7 @@
 //! turns a UI action into pointer inputs. Running them is up to [`crate::sync`] or
 //! [`crate::asynchronous`].
 
+use super::messages::NO_UI_TREE_WAIT;
 use crate::session::{CaptureError, WaitCondition};
 use rupicola_protocol::UiAction;
 use std::process::{Command, Stdio};
@@ -27,7 +28,6 @@ const BUTTON_WHEEL_LEFT: u8 = 6;
 const BUTTON_WHEEL_RIGHT: u8 = 7;
 const NO_UI_TREE_ACTION: &str =
     "this backend has no UI tree: use click-at, scroll without a target or wait-ms";
-const NO_UI_TREE_WAIT: &str = "this backend has no UI tree to wait on";
 /// Moves the pointer to `x y`, then presses and releases `button` `repeats` times (once
 /// per wheel notch). Arguments: x, y, button (0 = move only), repeats.
 const POINTER_SCRIPT: &str = r#"

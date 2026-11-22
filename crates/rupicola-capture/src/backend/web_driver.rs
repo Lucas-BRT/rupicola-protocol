@@ -75,7 +75,23 @@ impl<'a> DriverRequest<'a> {
     }
 }
 
+impl DriverRequest<'_> {
+    /// The JSON line to send: the request and a newline.
+    pub(crate) fn to_line(&self) -> std::io::Result<Vec<u8>> {
+        let mut line = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        line.push(b'\n');
+        Ok(line)
+    }
+}
+
 impl DriverReply {
+    /// Reads one JSON line the driver sent.
+    pub(crate) fn from_line(line: &str) -> std::io::Result<Self> {
+        serde_json::from_str(line.trim_end())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+
     /// The reply when the driver says it worked; otherwise the error it reports.
     pub(crate) fn into_result(self) -> Result<Self, CaptureError> {
         if self.ok {
