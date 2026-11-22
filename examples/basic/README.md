@@ -1,6 +1,6 @@
 # Basic Examples (Hello World — `rupicola-protocol`)
 
-Exemplos mínimos que demonstram o micro-protocolo [`rupicola-protocol`](../../protocol/Cargo.toml) nos principais toolkits e ambientes suportados:
+Exemplos mínimos que demonstram o micro-protocolo [`rupicola-protocol`](../../Cargo.toml) nos principais toolkits e ambientes suportados:
 
 - `linux_iced` (`ToolkitKind::Iced`)
 - `linux_gtk4` (`ToolkitKind::Gtk4`)
