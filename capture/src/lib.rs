@@ -10,6 +10,7 @@ pub mod gtk_broadway;
 pub mod linux_wayland;
 #[cfg(unix)]
 pub mod linux_x11;
+pub mod session;
 pub mod web;
 
 pub use android_adb::AndroidAdbBackend;
