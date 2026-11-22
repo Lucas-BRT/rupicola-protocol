@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Project workspace</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div><p class="eyebrow">FIELDWORK / PROJECTS</p><h1>Project workspace</h1></div><button id="theme" type="button" aria-pressed="false">Dark theme</button></header>
+<nav aria-label="Workspace pages"><button type="button" data-page="overview" aria-current="page">Overview</button><button type="button" data-page="projects">Projects</button><button type="button" data-page="settings">Settings</button></nav>
+<main>
+<section id="overview"><div class="section-heading"><div><p class="eyebrow">AT A GLANCE</p><h2>Overview</h2></div></div><div class="metrics"><div><span>Projects</span><strong id="total">0</strong></div><div><span>In progress</span><strong id="active">0</strong></div><div><span>Completed</span><strong id="completed">0</strong></div></div><h3>Recent projects</h3><ul id="recent" class="recent"></ul></section>
+<section id="projects" hidden><div class="section-heading"><div><p class="eyebrow">WORK QUEUE</p><h2>Projects</h2></div><button type="button" id="new-project">Add project</button></div><div class="filters"><label>Search projects <input id="search" type="search" placeholder="Search by name"></label><label>Status <select id="filter"><option value="all">All statuses</option><option>Planned</option><option>In progress</option><option>Completed</option></select></label></div><p id="result-count" role="status"></p><div class="table-wrap"><table><thead><tr><th scope="col">Project</th><th scope="col">Status</th><th scope="col">Progress</th><th scope="col">Actions</th></tr></thead><tbody id="project-list"></tbody></table></div><p id="empty" hidden>No projects match your filters.</p></section>
+<section id="settings" hidden><p class="eyebrow">PREFERENCES</p><h2>Settings</h2><form id="settings-form"><label>Workspace name <input id="workspace-name" required maxlength="60"></label><label class="check"><input id="compact" type="checkbox"> Compact project list</label><button type="submit">Save settings</button><p id="settings-message" role="status"></p></form><details><summary>About local data</summary><p>Projects and settings are stored in this browser.</p></details></section>
+</main>
+<dialog id="editor"><form id="project-form"><div class="section-heading"><h2 id="dialog-title">Add project</h2><button type="button" id="close-dialog" aria-label="Close dialog">×</button></div><label>Project name <input id="project-name" required maxlength="100" autocomplete="off"></label><label>Status <select id="project-status"><option>Planned</option><option>In progress</option><option>Completed</option></select></label><label>Progress <input id="progress" type="range" min="0" max="100" step="5" value="0"> <output id="progress-value">0%</output></label><div class="actions"><button type="button" id="cancel">Cancel</button><button type="submit">Save project</button></div></form></dialog>
+<script src="app.js" defer></script>
+</body></html>

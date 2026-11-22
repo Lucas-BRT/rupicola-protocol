@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Counter</title>
+  <style>
+    body { font: 1rem system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; color: #243044; background: #f3f5f8; }
+    output { display: block; font-size: 3rem; font-variant-numeric: tabular-nums; margin: 1rem 0; }
+    button { font: inherit; padding: .65rem 1rem; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #155ac1; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Counter</h1>
+    <output id="count" aria-live="polite">0</output>
+    <button id="increment" type="button">Increment</button>
+    <button id="reset" type="button">Reset</button>
+  </main>
+  <script>
+    const count = document.querySelector('#count');
+    let value = 0;
+    document.querySelector('#increment').addEventListener('click', () => { count.value = ++value; });
+    document.querySelector('#reset').addEventListener('click', () => { value = 0; count.value = value; });
+  </script>
+</body>
+</html>

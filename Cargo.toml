@@ -1,10 +1,23 @@
 [workspace]
-members = [".", "capture"]
-exclude = ["examples/apps/gtk4-notes"]
+members = ["crates/rupicola-protocol", "crates/rupicola-capture", "tools/example-capture"]
+default-members = ["crates/rupicola-protocol", "crates/rupicola-capture"]
+exclude = ["examples/apps/medium/notes/gtk4"]
 resolver = "2"
+
+[workspace.dependencies]
+rupicola-protocol = { path = "crates/rupicola-protocol" }
+rupicola-capture = { path = "crates/rupicola-capture" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+doc_broken_link = "deny"
+ignore_without_reason = "deny"
+invalid_upcast_comparisons = "deny"
+maybe_infinite_iter = "deny"
+should_panic_without_expect = "deny"
+unsafe_derive_deserialize = "deny"
 
 [profile.dev]
 debug = 0
@@ -17,21 +30,3 @@ opt-level = 3
 lto = "thin"
 codegen-units = 16
 strip = true
-
-[package]
-name = "rupicola-protocol"
-version = "0.2.0"
-edition = "2024"
-rust-version = "1.99"
-authors = ["LucasBRT <lucasbritodepaula@proton.me>"]
-description = "Lightweight middleware micro-protocol for UI tree snapshots, bounding boxes, and remote actions"
-repository = "https://github.com/Lucas-BRT/rupicola-protocol"
-keywords = ["ui", "protocol", "testing", "desktop", "web"]
-publish = false
-
-[lints]
-workspace = true
-
-[dependencies]
-serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.154"
