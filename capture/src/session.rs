@@ -95,8 +95,11 @@ impl Environment {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Capability {
-    /// Performs [`UiAction`]s.
+    /// Performs every [`UiAction`], including those that name a widget.
     Actions,
+    /// Performs the actions that only need screen coordinates: `click-at`, `scroll`
+    /// without a target, and `wait-ms`.
+    Pointer,
     /// Reports a UI tree with each screenshot.
     UiTree,
     /// Records walkthrough clips.
@@ -117,6 +120,7 @@ impl Capability {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Actions => "actions",
+            Self::Pointer => "pointer",
             Self::UiTree => "ui-tree",
             Self::Video => "video",
             Self::ColorScheme => "color-scheme",
@@ -124,8 +128,9 @@ impl Capability {
         }
     }
 
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Actions,
+        Self::Pointer,
         Self::UiTree,
         Self::Video,
         Self::ColorScheme,
@@ -164,9 +169,14 @@ impl Capabilities {
     /// The capabilities in `needed` that `self` lacks.
     #[must_use]
     pub fn missing(self, needed: Self) -> Vec<Capability> {
+        // Full actions include the coordinate-only ones.
+        let has = |item: Capability| {
+            self.contains(item)
+                || (item == Capability::Pointer && self.contains(Capability::Actions))
+        };
         Capability::ALL
             .into_iter()
-            .filter(|item| needed.contains(*item) && !self.contains(*item))
+            .filter(|item| needed.contains(*item) && !has(*item))
             .collect()
     }
 }
@@ -326,6 +336,14 @@ impl Step {
     #[must_use]
     pub const fn needs(&self) -> Capabilities {
         match self {
+            Self::Action {
+                action:
+                    UiAction::ClickAt { .. }
+                    | UiAction::Scroll {
+                        target_id: None, ..
+                    }
+                    | UiAction::WaitMs { .. },
+            } => Capabilities::of(&[Capability::Pointer]),
             Self::Action { .. } => Capabilities::of(&[Capability::Actions]),
             Self::StartRecording | Self::StopRecording { .. } => {
                 Capabilities::of(&[Capability::Video])
@@ -610,6 +628,24 @@ mod tests {
             journal.0.borrow().last().map(String::as_str),
             Some("finish")
         );
+    }
+
+    #[test]
+    fn coordinate_actions_need_only_the_pointer() {
+        let click = Step::Action {
+            action: UiAction::ClickAt { x: 1.0, y: 2.0 },
+        };
+        let named = Step::Action {
+            action: UiAction::Click {
+                target_id: "go".to_owned(),
+            },
+        };
+        let pointer = Capabilities::of(&[Capability::Pointer]);
+        assert_eq!(pointer.missing(click.needs()), []);
+        assert_eq!(pointer.missing(named.needs()), [Capability::Actions]);
+        assert_eq!(FULL.missing(click.needs()), []);
+        let full_actions = Capabilities::of(&[Capability::Actions]);
+        assert_eq!(full_actions.missing(click.needs()), []);
     }
 
     #[test]

@@ -12,6 +12,8 @@ pub mod linux_wayland;
 pub mod linux_x11;
 pub mod session;
 pub mod web;
+#[cfg(unix)]
+mod xvfb;
 
 pub use android_adb::AndroidAdbBackend;
 pub use annotate::{annotate_png, annotate_video, mp4_to_gif};
