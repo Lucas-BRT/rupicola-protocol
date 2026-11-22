@@ -1,6 +1,10 @@
-use rupicola_capture::{CaptureBackend, CaptureRequest, LinuxX11Backend, WebBackend};
+use rupicola_capture::{
+    AndroidAdbBackend, CaptureBackend, CaptureRequest, GtkBroadwayBackend, LinuxX11Backend,
+    WebBackend,
+};
 use rupicola_protocol::{
-    AnnotationBox, PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, TimeRange, UiAction,
+    AnnotationBox, AnnotationKeyframe, AnnotationShape, AnnotationStyle, Easing, LabelPosition,
+    PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, TimeRange, UiAction,
     UnixProtocolClient, serve_once_unix,
 };
 use std::fs;
@@ -14,7 +18,7 @@ use std::thread;
 use std::time::Duration;
 
 #[test]
-fn temporal_annotation_box_filters_by_time_and_normalizes_percent() {
+fn temporal_annotation_box_interpolates_keyframes_and_normalizes_percent() {
     let ann = AnnotationBox {
         bounds: Rect {
             x: 64.0,
@@ -23,18 +27,52 @@ fn temporal_annotation_box_filters_by_time_and_normalizes_percent() {
             height: 96.0,
         },
         label: "toast".into(),
-        color: None,
+        shape: AnnotationShape::Spotlight,
+        style: AnnotationStyle {
+            stroke_color: "#ef7e4d".into(),
+            stroke_width: 3.0,
+            fill_color: Some("rgba(239,126,77,0.12)".into()),
+            border_radius: 12.0,
+            dashed: true,
+            label_position: LabelPosition::Bottom,
+        },
         time_range: Some(TimeRange {
             start_ms: 500,
             end_ms: 1500,
         }),
+        keyframes: vec![
+            AnnotationKeyframe {
+                timestamp_ms: 500,
+                bounds: Rect {
+                    x: 64.0,
+                    y: 48.0,
+                    width: 320.0,
+                    height: 96.0,
+                },
+                easing: Easing::Linear,
+            },
+            AnnotationKeyframe {
+                timestamp_ms: 1500,
+                bounds: Rect {
+                    x: 164.0,
+                    y: 148.0,
+                    width: 320.0,
+                    height: 96.0,
+                },
+                easing: Easing::Linear,
+            },
+        ],
     };
     assert!(!ann.active_at(499));
     assert!(ann.active_at(500));
     assert!(ann.active_at(1500));
     assert!(!ann.active_at(1501));
 
-    let pct = ann.to_percent_box([640, 480]).unwrap();
+    let mid = ann.bounds_at(1000);
+    assert!((mid.x - 114.0).abs() < 0.01);
+    assert!((mid.y - 98.0).abs() < 0.01);
+
+    let pct = ann.percent_box_at(500, [640, 480]).unwrap();
     assert!((pct[0] - 10.0).abs() < 0.01);
     assert!((pct[1] - 10.0).abs() < 0.01);
     assert!((pct[2] - 50.0).abs() < 0.01);
@@ -122,8 +160,10 @@ fn linux_x11_backend_captures_real_gtk4_app_and_annotates_in_rust() {
                     height: 38.0,
                 },
                 label: "note-entry".into(),
-                color: Some("#c24518".into()),
+                shape: AnnotationShape::Rect,
+                style: AnnotationStyle::default(),
                 time_range: None,
+                keyframes: vec![],
             }],
             output_dir: out_dir.clone(),
         })
@@ -197,8 +237,10 @@ fn web_backend_captures_real_crud_app_with_actions_video_and_annotations() {
                     height: 38.0,
                 },
                 label: "create-form".into(),
-                color: Some("#c24518".into()),
+                shape: AnnotationShape::Rect,
+                style: AnnotationStyle::default(),
                 time_range: None,
+                keyframes: vec![],
             }],
             output_dir: out_dir.clone(),
         })
@@ -213,5 +255,61 @@ fn web_backend_captures_real_crud_app_with_actions_video_and_annotations() {
         snap.find_by_id("counter").unwrap().label.as_deref(),
         Some("3 remaining · 4 total")
     );
+    let _ = fs::remove_dir_all(&out_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn gtk_broadway_backend_captures_real_gtk4_app_without_x11() {
+    let Some(web) = WebBackend::discover("chromium") else {
+        return;
+    };
+    let has_broadway = Command::new("which")
+        .arg("gtk4-broadwayd")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    let has_gtk4 = Command::new("pkg-config")
+        .args(["--exists", "gtk4"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !has_broadway || !has_gtk4 {
+        return;
+    }
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let target_dir = std::env::temp_dir().join("rupicola-capture-gtk4-target");
+    let build = Command::new("cargo")
+        .args(["build", "--offline", "--quiet", "--manifest-path"])
+        .arg(root.join("examples/apps/gtk4-notes/Cargo.toml"))
+        .arg("--target-dir")
+        .arg(&target_dir)
+        .status()
+        .unwrap();
+    assert!(build.success());
+
+    let out_dir = std::env::temp_dir().join("rupicola-capture-broadway-out");
+    let _ = fs::remove_dir_all(&out_dir);
+    let backend = GtkBroadwayBackend::new(17, web);
+    let out = backend
+        .capture(&CaptureRequest {
+            command: target_dir
+                .join("debug/gtk4-notes")
+                .to_string_lossy()
+                .into_owned(),
+            args: vec![],
+            viewport: [640, 480],
+            warmup_ms: 1000,
+            actions: vec![],
+            record_video_ms: None,
+            annotations: vec![],
+            output_dir: out_dir.clone(),
+        })
+        .unwrap();
+
+    assert!(out.screenshot_png.is_file());
+    assert_eq!(AndroidAdbBackend::default().name(), "mobile-android-adb");
     let _ = fs::remove_dir_all(&out_dir);
 }

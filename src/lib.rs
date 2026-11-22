@@ -9,7 +9,10 @@ pub mod transport;
 pub mod tree;
 
 pub use action::UiAction;
-pub use annotation::{AnnotationBox, TimeRange};
+pub use annotation::{
+    AnnotationBox, AnnotationKeyframe, AnnotationShape, AnnotationStyle, Easing, LabelPosition,
+    TimeRange,
+};
 pub use geometry::Rect;
 pub use message::{ProtocolRequest, ProtocolResponse};
 #[cfg(unix)]

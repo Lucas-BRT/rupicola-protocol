@@ -1,6 +1,5 @@
 # Unit Calculator (`examples/apps/unit-calculator`)
 
-> Language: **English** | [Português (BR)](README.pt-BR.md)
 
 Classic calculator + unit converter (`px ↔ rem` and `°C ↔ °F`) demonstrating keypad grid layout, monospace display, expression evaluation, and operation history without any Rupicola instrumentation in the app source.
 

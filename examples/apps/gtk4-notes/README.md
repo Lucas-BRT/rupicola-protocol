@@ -1,6 +1,5 @@
 # GTK4 Notes (`examples/apps/gtk4-notes`)
 
-> Language: **English** | [Português (BR)](README.pt-BR.md)
 
 Native Linux desktop application written in **pure Rust** linking `libgtk-4` directly (zero external crates, zero Rupicola code inside the application).
 

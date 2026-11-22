@@ -3,11 +3,11 @@
 //! using `rupicola-capture` directly.
 
 use rupicola_capture::{CaptureBackend, CaptureRequest, LinuxX11Backend, WebBackend};
-use rupicola_protocol::{AnnotationBox, Rect, UiAction};
+use rupicola_protocol::{AnnotationBox, AnnotationShape, AnnotationStyle, Rect, UiAction};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,27 +50,43 @@ fn ann(x: f32, y: f32, width: f32, height: f32, label: &str) -> AnnotationBox {
             height,
         },
         label: label.to_owned(),
-        color: Some("#c24518".to_owned()),
+        shape: AnnotationShape::Rect,
+        style: AnnotationStyle::default(),
         time_range: None,
+        keyframes: vec![],
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "declarative capture specs for the 3 web example apps"
-)]
-fn capture_web_apps(root: &std::path::Path) {
-    let Some(web) = WebBackend::discover("chromium") else {
-        return;
-    };
-    // 1. crud-tasks
-    let (url, stop) = serve_dir(root.join("examples/apps/crud-tasks"));
+fn capture_web_app(
+    web: &WebBackend,
+    root: &Path,
+    name: &str,
+    actions: Vec<UiAction>,
+    record_video_ms: u64,
+    annotations: Vec<AnnotationBox>,
+) {
+    let app_dir = root.join("examples/apps").join(name);
+    let (url, stop) = serve_dir(app_dir.clone());
     web.capture(&CaptureRequest {
         command: url,
         args: vec![],
         viewport: [1280, 720],
         warmup_ms: 0,
-        actions: vec![
+        actions,
+        record_video_ms: Some(record_video_ms),
+        annotations,
+        output_dir: app_dir.join("media"),
+    })
+    .unwrap_or_else(|e| panic!("capture {name}: {e}"));
+    stop.store(true, Ordering::Relaxed);
+}
+
+fn capture_crud_tasks(web: &WebBackend, root: &Path) {
+    capture_web_app(
+        web,
+        root,
+        "crud-tasks",
+        vec![
             UiAction::TypeText {
                 target_id: "new-task".into(),
                 text: "Verify video annotation".into(),
@@ -84,25 +100,21 @@ fn capture_web_apps(root: &std::path::Path) {
             },
             UiAction::WaitMs { ms: 400 },
         ],
-        record_video_ms: Some(1500),
-        annotations: vec![
+        1500,
+        vec![
             ann(345.0, 258.0, 590.0, 38.0, "create-form"),
             ann(345.0, 312.0, 590.0, 36.0, "filter-tabs"),
             ann(345.0, 365.0, 590.0, 146.0, "task-list"),
         ],
-        output_dir: root.join("examples/apps/crud-tasks/media"),
-    })
-    .expect("capture crud-tasks");
-    stop.store(true, Ordering::Relaxed);
+    );
+}
 
-    // 2. pomodoro-timer
-    let (url, stop) = serve_dir(root.join("examples/apps/pomodoro-timer"));
-    web.capture(&CaptureRequest {
-        command: url,
-        args: vec![],
-        viewport: [1280, 720],
-        warmup_ms: 0,
-        actions: vec![
+fn capture_pomodoro_timer(web: &WebBackend, root: &Path) {
+    capture_web_app(
+        web,
+        root,
+        "pomodoro-timer",
+        vec![
             UiAction::Click {
                 target_id: "toggle-btn".into(),
             },
@@ -116,25 +128,21 @@ fn capture_web_apps(root: &std::path::Path) {
             },
             UiAction::WaitMs { ms: 400 },
         ],
-        record_video_ms: Some(2000),
-        annotations: vec![
+        2000,
+        vec![
             ann(502.0, 224.0, 276.0, 36.0, "mode-switcher"),
             ann(540.0, 278.0, 200.0, 200.0, "svg-progress-ring"),
             ann(564.0, 496.0, 152.0, 38.0, "timer-controls"),
         ],
-        output_dir: root.join("examples/apps/pomodoro-timer/media"),
-    })
-    .expect("capture pomodoro-timer");
-    stop.store(true, Ordering::Relaxed);
+    );
+}
 
-    // 3. unit-calculator
-    let (url, stop) = serve_dir(root.join("examples/apps/unit-calculator"));
-    web.capture(&CaptureRequest {
-        command: url,
-        args: vec![],
-        viewport: [1280, 720],
-        warmup_ms: 0,
-        actions: vec![
+fn capture_unit_calculator(web: &WebBackend, root: &Path) {
+    capture_web_app(
+        web,
+        root,
+        "unit-calculator",
+        vec![
             UiAction::Click {
                 target_id: "[data-k=\"+\"]".into(),
             },
@@ -156,19 +164,16 @@ fn capture_web_apps(root: &std::path::Path) {
             },
             UiAction::WaitMs { ms: 400 },
         ],
-        record_video_ms: Some(1800),
-        annotations: vec![
+        1800,
+        vec![
             ann(452.0, 166.0, 376.0, 78.0, "numeric-display"),
             ann(452.0, 258.0, 376.0, 36.0, "unit-converter"),
             ann(452.0, 308.0, 376.0, 248.0, "keypad-grid"),
         ],
-        output_dir: root.join("examples/apps/unit-calculator/media"),
-    })
-    .expect("capture unit-calculator");
-    stop.store(true, Ordering::Relaxed);
+    );
 }
 
-fn capture_gtk4_app(root: &std::path::Path) {
+fn capture_gtk4_app(root: &Path) {
     let target_dir = std::env::temp_dir().join("rupicola-refresh-gtk4");
     let build = Command::new("cargo")
         .args(["build", "--offline", "--quiet", "--manifest-path"])
@@ -206,7 +211,11 @@ fn main() {
         .parent()
         .unwrap()
         .to_path_buf();
-    capture_web_apps(&root);
+    if let Some(web) = WebBackend::discover("chromium") {
+        capture_crud_tasks(&web, &root);
+        capture_pomodoro_timer(&web, &root);
+        capture_unit_calculator(&web, &root);
+    }
     capture_gtk4_app(&root);
     println!("Regenerated clean + annotated PNG, MP4, and GIF for all 4 example apps.");
 }

@@ -13,15 +13,21 @@ fn build_drawbox_filters(
         .filter(|b| b.bounds.is_valid())
         .map(|b| {
             let [x, y, w, h] = b.bounds.to_pixel_box(scale_factor);
-            let color = b.color.as_deref().unwrap_or("#c24518");
+            let color = b.style.stroke_color.as_str();
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "clamped positive stroke thickness in pixels"
+            )]
+            let thickness = b.style.stroke_width.clamp(1.0, 20.0).round() as u32;
             if temporal && let Some(range) = b.time_range {
                 let start = format!("{}.{:03}", range.start_ms / 1000, range.start_ms % 1000);
                 let end = format!("{}.{:03}", range.end_ms / 1000, range.end_ms % 1000);
                 format!(
-                    "drawbox=x={x}:y={y}:w={w}:h={h}:color={color}:t=2:enable='between(t,{start},{end})'"
+                    "drawbox=x={x}:y={y}:w={w}:h={h}:color={color}:t={thickness}:enable='between(t,{start},{end})'"
                 )
             } else {
-                format!("drawbox=x={x}:y={y}:w={w}:h={h}:color={color}:t=2")
+                format!("drawbox=x={x}:y={y}:w={w}:h={h}:color={color}:t={thickness}")
             }
         })
         .collect()
