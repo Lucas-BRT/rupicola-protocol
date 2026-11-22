@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tasks CRUD · Rupicola Example</title>
+  <style>
+    :root { --bg: #f6f2eb; --surface: #fffdf9; --ink: #221c17; --muted: #6c5f53; --line: #dfd5c7; --accent: #c24518; --accent-ink: #ffffff; --ok: #2e6b4e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--ink); display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
+    .app { width: min(100%, 40rem); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; box-shadow: 0 12px 32px rgba(34,28,23,.08); display: grid; gap: 1rem; }
+    header { display: flex; justify-content: space-between; align-items: baseline; }
+    h1 { margin: 0; font-size: 1.5rem; }
+    .badge { font-family: monospace; font-size: .8rem; color: var(--muted); }
+    form { display: flex; gap: .5rem; }
+    input[type="text"] { flex: 1; padding: .6rem .8rem; border: 1.5px solid var(--line); border-radius: 10px; font-size: .95rem; }
+    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; }
+    button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .filters { display: flex; gap: .4rem; }
+    .filters button[aria-pressed="true"] { background: #fbece3; color: #a53610; border-color: #e6b49e; }
+    ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    li { display: flex; align-items: center; gap: .7rem; padding: .65rem .2rem; border-bottom: 1px solid var(--line); }
+    li.done span { text-decoration: line-through; color: var(--muted); }
+    li span { flex: 1; }
+    .del { color: #9c2b2b; border-color: transparent; background: transparent; padding: .3rem .55rem; }
+    .empty { color: var(--muted); text-align: center; padding: 1.25rem 0; }
+  </style>
+</head>
+<body>
+  <main class="app" id="app-root">
+    <header>
+      <h1>Tasks CRUD</h1>
+      <span class="badge" id="counter">3 items</span>
+    </header>
+    <form id="add-form">
+      <input id="new-task" type="text" placeholder="Add a new task..." aria-label="Task title" required />
+      <button class="primary" type="submit" id="add-btn">Add task</button>
+    </form>
+    <div class="filters" role="group" aria-label="Filter tasks">
+      <button type="button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" data-filter="active" aria-pressed="false">Active</button>
+      <button type="button" data-filter="done" aria-pressed="false">Completed</button>
+    </div>
+    <ul id="task-list"></ul>
+  </main>
+  <script>
+    let tasks = [
+      { id: 1, title: "Capture baseline screenshot", done: true },
+      { id: 2, title: "Inspect hover states in video", done: false },
+      { id: 3, title: "Approve fix in panel", done: false }
+    ];
+    let filter = "all";
+    const list = document.getElementById("task-list");
+    const counter = document.getElementById("counter");
+
+    function render() {
+      const visible = tasks.filter(t => filter === "all" ? true : filter === "active" ? !t.done : t.done);
+      counter.textContent = `${tasks.filter(t => !t.done).length} remaining · ${tasks.length} total`;
+      if (!visible.length) {
+        list.innerHTML = '<li class="empty">No tasks match this filter.</li>';
+        return;
+      }
+      list.innerHTML = visible.map(t => `
+        <li class="${t.done ? 'done' : ''}" data-id="${t.id}">
+          <input type="checkbox" ${t.done ? 'checked' : ''} aria-label="Toggle ${t.title}" />
+          <span>${t.title}</span>
+          <button type="button" class="del" aria-label="Delete ${t.title}">Delete</button>
+        </li>
+      `).join("");
+    }
+
+    document.getElementById("add-form").addEventListener("submit", e => {
+      e.preventDefault();
+      const input = document.getElementById("new-task");
+      if (!input.value.trim()) return;
+      tasks.push({ id: Date.now(), title: input.value.trim(), done: false });
+      input.value = "";
+      render();
+    });
+
+    list.addEventListener("click", e => {
+      const li = e.target.closest("li[data-id]");
+      if (!li) return;
+      const id = Number(li.dataset.id);
+      if (e.target.matches('input[type="checkbox"]')) {
+        tasks = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t);
+        render();
+      } else if (e.target.matches('.del')) {
+        tasks = tasks.filter(t => t.id !== id);
+        render();
+      }
+    });
+
+    document.querySelectorAll("[data-filter]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filter = btn.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+        render();
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pomodoro Timer · Rupicola Example</title>
+  <style>
+    :root { --bg: #1b1613; --surface: #261f1b; --ink: #f4ece2; --muted: #b5a697; --line: #3e332b; --accent: #ef7e4d; --ring-bg: #362c25; }
+    [data-theme="light"] { --bg: #f3ece2; --surface: #fbf8f3; --ink: #282019; --muted: #625448; --line: #dbd0c0; --accent: #c24518; --ring-bg: #e7ddd0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--ink); display: grid; place-items: center; min-height: 100vh; transition: background 220ms ease, color 220ms ease; }
+    .card { width: min(92vw, 25rem); background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 1.6rem; display: grid; gap: 1.15rem; justify-items: center; box-shadow: 0 18px 40px rgba(0,0,0,.22); }
+    .top { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .modes { display: flex; gap: .4rem; background: var(--ring-bg); padding: 4px; border-radius: 999px; }
+    .modes button { border: 0; background: transparent; color: var(--muted); padding: .35rem .75rem; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: .82rem; }
+    .modes button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+    .ring-wrap { position: relative; width: 200px; height: 200px; display: grid; place-items: center; }
+    svg { transform: rotate(-90deg); width: 200px; height: 200px; }
+    .track { fill: none; stroke: var(--ring-bg); stroke-width: 10; }
+    .prog { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; stroke-dasharray: 565.48; stroke-dashoffset: 0; transition: stroke-dashoffset 300ms linear; }
+    .time { position: absolute; font-family: monospace; font-size: 2.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .controls { display: flex; gap: .6rem; }
+    .btn { padding: .6rem 1.15rem; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-weight: 600; cursor: pointer; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #1b110c; }
+    [data-theme="light"] .btn.primary { color: #ffffff; }
+  </style>
+</head>
+<body>
+  <main class="card" id="pomodoro-app">
+    <div class="top">
+      <h1>Pomodoro Timer</h1>
+      <button type="button" class="btn" id="theme-btn">Light</button>
+    </div>
+    <div class="modes" role="group" aria-label="Session mode">
+      <button type="button" data-secs="1500" aria-pressed="true">Focus 25m</button>
+      <button type="button" data-secs="300" aria-pressed="false">Short 5m</button>
+      <button type="button" data-secs="900" aria-pressed="false">Long 15m</button>
+    </div>
+    <div class="ring-wrap">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="track" cx="100" cy="100" r="90"></circle>
+        <circle class="prog" id="ring" cx="100" cy="100" r="90"></circle>
+      </svg>
+      <div class="time" id="display">25:00</div>
+    </div>
+    <div class="controls">
+      <button type="button" class="btn primary" id="toggle-btn">Start</button>
+      <button type="button" class="btn" id="reset-btn">Reset</button>
+    </div>
+  </main>
+  <script>
+    const CIRC = 2 * Math.PI * 90;
+    let total = 1500, left = 1500, timer = null;
+    const display = document.getElementById("display");
+    const ring = document.getElementById("ring");
+    const toggleBtn = document.getElementById("toggle-btn");
+
+    function draw() {
+      const m = String(Math.floor(left / 60)).padStart(2, "0");
+      const s = String(left % 60).padStart(2, "0");
+      display.textContent = `${m}:${s}`;
+      ring.style.strokeDashoffset = String(CIRC * (1 - left / total));
+    }
+
+    toggleBtn.addEventListener("click", () => {
+      if (timer) {
+        clearInterval(timer); timer = null; toggleBtn.textContent = "Start";
+      } else {
+        toggleBtn.textContent = "Pause";
+        timer = setInterval(() => {
+          if (left > 0) { left--; draw(); }
+          else { clearInterval(timer); timer = null; toggleBtn.textContent = "Start"; }
+        }, 1000);
+      }
+    });
+
+    document.getElementById("reset-btn").addEventListener("click", () => {
+      if (timer) { clearInterval(timer); timer = null; toggleBtn.textContent = "Start"; }
+      left = total; draw();
+    });
+
+    document.querySelectorAll("[data-secs]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (timer) { clearInterval(timer); timer = null; toggleBtn.textContent = "Start"; }
+        total = Number(btn.dataset.secs); left = total;
+        document.querySelectorAll("[data-secs]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+        draw();
+      });
+    });
+
+    document.getElementById("theme-btn").addEventListener("click", (e) => {
+      const light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      e.target.textContent = light ? "Light" : "Dark";
+    });
+    draw();
+  </script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unit Calculator · Rupicola Example</title>
+  <style>
+    :root { --bg: #eef2f0; --surface: #ffffff; --ink: #1a241f; --muted: #55665d; --line: #d2ddd7; --accent: #2f6b4f; --key: #f5f8f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--ink); display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
+    .calc { width: min(100%, 26rem); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 1.25rem; display: grid; gap: .9rem; box-shadow: 0 14px 30px rgba(26,36,31,.08); }
+    .head { display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 1.15rem; }
+    .screen { background: #141c18; color: #f1f7f3; border-radius: 12px; padding: .9rem 1rem; text-align: right; font-family: monospace; }
+    .expr { font-size: .82rem; color: #9cb2a6; min-height: 1.1em; }
+    .val { font-size: 1.9rem; font-weight: 700; }
+    .conv { display: flex; justify-content: space-between; font-size: .84rem; color: var(--muted); background: var(--key); padding: .5rem .75rem; border-radius: 10px; border: 1px solid var(--line); }
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: .45rem; }
+    button { padding: .75rem; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button.op { background: #e3efe8; color: #1d4a35; }
+    button.eq { background: var(--accent); color: #ffffff; border-color: var(--accent); grid-column: span 2; }
+    .hist { font-family: monospace; font-size: .78rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: .5rem; max-height: 4.5rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <main class="calc" id="calc-app">
+    <div class="head">
+      <h1>Unit Calculator</h1>
+      <button type="button" id="unit-btn" style="padding:.35rem .65rem;font-size:.8rem;">px ↔ rem</button>
+    </div>
+    <div class="screen">
+      <div class="expr" id="expr">24 * 2</div>
+      <div class="val" id="val">48</div>
+    </div>
+    <div class="conv" id="conv"><span>48 px = 3.00 rem (base 16px)</span></div>
+    <div class="keys">
+      <button type="button" data-k="C">C</button>
+      <button type="button" data-k="(">(</button>
+      <button type="button" data-k=")">)</button>
+      <button type="button" class="op" data-k="/">÷</button>
+      <button type="button" data-k="7">7</button>
+      <button type="button" data-k="8">8</button>
+      <button type="button" data-k="9">9</button>
+      <button type="button" class="op" data-k="*">×</button>
+      <button type="button" data-k="4">4</button>
+      <button type="button" data-k="5">5</button>
+      <button type="button" data-k="6">6</button>
+      <button type="button" class="op" data-k="-">−</button>
+      <button type="button" data-k="1">1</button>
+      <button type="button" data-k="2">2</button>
+      <button type="button" data-k="3">3</button>
+      <button type="button" class="op" data-k="+">+</button>
+      <button type="button" data-k="0">0</button>
+      <button type="button" data-k=".">.</button>
+      <button type="button" class="eq" data-k="=">=</button>
+    </div>
+    <div class="hist" id="hist">24 * 2 = 48</div>
+  </main>
+  <script>
+    let expr = "24 * 2", current = "48", unitMode = "px";
+    const exprEl = document.getElementById("expr");
+    const valEl = document.getElementById("val");
+    const convEl = document.getElementById("conv");
+    const histEl = document.getElementById("hist");
+
+    function updateUnit() {
+      const num = Number(current);
+      if (!Number.isFinite(num)) { convEl.textContent = "—"; return; }
+      convEl.textContent = unitMode === "px"
+        ? `${num} px = ${(num / 16).toFixed(2)} rem (base 16px)`
+        : `${num} °C = ${((num * 9 / 5) + 32).toFixed(1)} °F`;
+    }
+
+    document.getElementById("unit-btn").addEventListener("click", (e) => {
+      unitMode = unitMode === "px" ? "temp" : "px";
+      e.target.textContent = unitMode === "px" ? "px ↔ rem" : "°C ↔ °F";
+      updateUnit();
+    });
+
+    document.querySelector(".keys").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-k]");
+      if (!btn) return;
+      const k = btn.dataset.k;
+      if (k === "C") { expr = ""; current = "0"; }
+      else if (k === "=") {
+        try {
+          if (/^[0-9+\-*/().\s]+$/.test(expr)) {
+            const res = Function(`"use strict"; return (${expr})`)();
+            histEl.textContent = `${expr} = ${res}\n` + histEl.textContent;
+            current = String(res);
+          }
+        } catch { current = "Err"; }
+      } else {
+        expr += k;
+      }
+      exprEl.textContent = expr || "0";
+      valEl.textContent = current;
+      updateUnit();
+    });
+    updateUnit();
+  </script>
+</body>
+</html>
