@@ -83,14 +83,20 @@ impl Encoder {
             let _ = write!(
                 script,
                 "file '{}'\nduration {seconds:.3}\n",
-                frame.file.display()
+                Self::absolute(&frame.file).display()
             );
         }
         // The concat demuxer ignores the duration of the last entry unless it is repeated.
         if let Some(last) = frames.last() {
-            let _ = writeln!(script, "file '{}'", last.file.display());
+            let _ = writeln!(script, "file '{}'", Self::absolute(&last.file).display());
         }
         script
+    }
+
+    /// `path` made absolute, because `ffmpeg` reads the paths in a list relative to the
+    /// list's own folder, not to the working directory.
+    fn absolute(path: &Path) -> PathBuf {
+        std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
     }
 
     /// The `ffmpeg` command that encodes the frames listed in `list` into `mp4`.
@@ -111,5 +117,22 @@ impl Encoder {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         command
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RELATIVE_FRAME: &str = "out/.recording-frames/frame000000.jpg";
+
+    #[test]
+    fn the_frame_list_names_frames_by_absolute_path() {
+        let list = Encoder::frame_list(&[Frame {
+            file: PathBuf::from(RELATIVE_FRAME),
+            ms: 0.0,
+        }]);
+        let cwd = std::env::current_dir().unwrap();
+        assert!(list.contains(&format!("file '{}'", cwd.join(RELATIVE_FRAME).display())));
     }
 }
