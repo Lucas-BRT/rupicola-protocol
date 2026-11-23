@@ -24,22 +24,9 @@ mod flavour {
         },
     };
     use rupicola_protocol::{SnapshotSource, UiAction, WidgetKind};
-    use std::{
-        fs,
-        io::{Read, Write},
-        net::TcpListener,
-        path::PathBuf,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-        thread,
-        time::Duration,
-    };
+    use std::{fs, sync::atomic::Ordering};
 
     const VIEWPORT: [u32; 2] = [1280, 720];
-    /// Pause between accepts while the test server waits for a connection.
-    const ACCEPT_POLL: Duration = Duration::from_millis(10);
     /// Length of the recorded walkthrough.
     const CLIP_MS: u64 = 600;
     /// What the CRUD example's counter says after adding one task to its three.
@@ -51,36 +38,6 @@ mod flavour {
     const TIMEOUT_MS: u64 = 5000;
     const ADD_BUTTON_ID: &str = "add-btn";
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/";
-
-    /// Serves the CRUD example until the returned flag is set.
-    fn serve_example() -> (String, Arc<AtomicBool>) {
-        let page = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/apps/medium/tasks/html/index.html");
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/index.html", listener.local_addr().unwrap());
-        listener.set_nonblocking(true).unwrap();
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&stop);
-        thread::spawn(move || {
-            while !flag.load(Ordering::Relaxed) {
-                if let Ok((mut stream, _)) = listener.accept() {
-                    let mut buffer = [0_u8; 1024];
-                    let _ = stream.read(&mut buffer);
-                    if let Ok(body) = fs::read(&page) {
-                        let header = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                            body.len()
-                        );
-                        let _ = stream.write_all(header.as_bytes());
-                        let _ = stream.write_all(&body);
-                    }
-                } else {
-                    thread::sleep(ACCEPT_POLL);
-                }
-            }
-        });
-        (url, stop)
-    }
 
     /// Duration of a video in seconds, when `ffprobe` is installed.
     fn clip_seconds(path: &std::path::Path) -> Option<f64> {
@@ -116,7 +73,7 @@ mod flavour {
         let Some(backend) = found else {
             return;
         };
-        let (url, stop) = serve_example();
+        let (url, stop) = crate::support::serve_example();
         let out = crate::support::out_dir(&format!("web-{TAG}-session"));
         let steps = vec![
             Step::Checkpoint {
@@ -189,7 +146,7 @@ mod flavour {
         let Some(backend) = found else {
             return;
         };
-        let (url, stop) = serve_example();
+        let (url, stop) = crate::support::serve_example();
         let out = crate::support::out_dir(&format!("web-{TAG}-ui-tree-modes"));
         let checkpoint = || {
             vec![Step::Checkpoint {
@@ -237,7 +194,7 @@ mod flavour {
         let Some(backend) = found else {
             return;
         };
-        let (url, stop) = serve_example();
+        let (url, stop) = crate::support::serve_example();
         let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-session-web-missing"));
         let steps = vec![Step::Wait {
             condition: WaitCondition::Visible {
@@ -274,7 +231,7 @@ mod flavour {
         let Some(backend) = found else {
             return;
         };
-        let (url, stop) = serve_example();
+        let (url, stop) = crate::support::serve_example();
         let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-session-web-css"));
         let _ = fs::remove_dir_all(&out);
         let mut environment = Environment::new(VIEWPORT);

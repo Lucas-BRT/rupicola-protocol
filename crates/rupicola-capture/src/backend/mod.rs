@@ -6,7 +6,9 @@ pub(crate) mod android_adb;
 pub(crate) mod android_ui;
 pub(crate) mod annotate;
 pub(crate) mod artifacts;
+pub(crate) mod base64;
 pub(crate) mod cdp;
+pub(crate) mod dom_tree;
 #[cfg(unix)]
 pub(crate) mod gtk_broadway;
 #[cfg(unix)]

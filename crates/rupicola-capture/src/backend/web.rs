@@ -1,3 +1,4 @@
+use super::dom_tree::DOM_SNAPSHOT_JS;
 use super::web_driver::Frame;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -60,7 +61,8 @@ impl WebBackend {
         let mut command = Command::new(&self.node_bin);
         command
             .arg("-e")
-            .arg(SESSION_DRIVER)
+            // The driver hands the DOM walker to the page, so the walker comes first.
+            .arg(format!("{DOM_SNAPSHOT_JS}\n{SESSION_DRIVER}"))
             .env("PW_DIR", &self.playwright_module)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

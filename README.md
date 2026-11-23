@@ -192,7 +192,7 @@ mp4_to_gif(&bundle.clips[0].mp4, Path::new("click.gif"), 320)
 | Backend | Target | Requirements | Capabilities |
 | :--- | :--- | :--- | :--- |
 | `WebBackend` | Web (`chromium` / `firefox` / `webkit`) | Node.js + Playwright, `ffmpeg` for clips | actions on elements, UI tree, video, color scheme, scale |
-| `CdpBackend` | Web (no Node/Playwright) | Local Chromium / Chrome / Brave | screenshots only |
+| `CdpBackend` | Web (no Node/Playwright) | Local Chromium / Chrome / Brave, and `sh` | UI tree, color scheme, scale, waits on elements and text (screenshots always). On Unix it keeps one browser for the session and speaks the Chrome DevTools Protocol over its pipes; elsewhere it runs the browser again for each screenshot and only takes screenshots. Actions on named elements and video are not supported. |
 | `LinuxX11Backend` | Linux Desktop (GTK4, Iced, egui, Qt) | `Xvfb`, `ffmpeg`, `python3` with libX11 and libXtst | pointer input, video |
 | `GtkBroadwayBackend` | Linux GTK4 (no X11/Wayland) | `gtk4-broadwayd`, `WebBackend` | pointer input, video |
 | `LinuxWaylandBackend` | Linux Wayland (nested `cosmic-comp`) | `Xvfb`, the compositor, `ffmpeg`, `python3` with libX11 and libXtst | pointer input, video |

@@ -48,6 +48,23 @@ impl Child {
         self.stdin = None;
     }
 
+    /// Reads what the process wrote up to the next `delimiter`, without it; `None` at the end
+    /// of the stream.
+    pub(crate) async fn read_message(&mut self, delimiter: u8) -> io::Result<Option<Vec<u8>>> {
+        let stdout = self
+            .stdout
+            .as_mut()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
+        let mut message = Vec::new();
+        if stdout.read_until(delimiter, &mut message).await? == 0 {
+            return Ok(None);
+        }
+        if message.last() == Some(&delimiter) {
+            message.pop();
+        }
+        Ok(Some(message))
+    }
+
     /// Reads one line from the process's stdout; `None` at the end of the stream.
     pub(crate) async fn read_line(&mut self) -> io::Result<Option<String>> {
         let stdout = self

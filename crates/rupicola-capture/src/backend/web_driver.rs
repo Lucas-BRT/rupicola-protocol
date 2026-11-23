@@ -1,6 +1,7 @@
+use super::dom_tree::DomTree;
 use super::web::WebBackend;
 use crate::session::{CaptureError, ColorScheme, Environment, ErrorClass, Target, WaitCondition};
-use rupicola_protocol::{SnapshotSource, UiAction, UiSnapshot, WidgetKind, WidgetNode};
+use rupicola_protocol::{UiAction, UiSnapshot};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -96,18 +97,7 @@ impl DriverRequest<'_> {
 impl DriverReply {
     /// The page's tree, marked as a DOM and with every node in the shared vocabulary.
     pub(crate) fn tree(&mut self) -> Option<UiSnapshot> {
-        self.snapshot.take().map(|mut tree| {
-            tree.source = SnapshotSource::Dom;
-            Self::classify(&mut tree.root);
-            tree
-        })
-    }
-
-    fn classify(node: &mut WidgetNode) {
-        node.kind = WidgetKind::from_dom(&node.role);
-        for child in &mut node.children {
-            Self::classify(child);
-        }
+        self.snapshot.take().map(DomTree::finish)
     }
 
     /// Reads one JSON line the driver sent.
