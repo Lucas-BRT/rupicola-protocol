@@ -10,18 +10,20 @@
 )]
 pub(crate) mod flavour {
     use crate::backend::AndroidAdbBackend;
-    use crate::backend::android_adb::{ADB, RECORDING_FLUSH_MS};
+    use crate::backend::android_adb::{ADB, DUMP_ATTEMPTS, DUMP_RETRY_MS, RECORDING_FLUSH_MS};
+    use crate::backend::android_ui::{AndroidDump, density_dpi, png_size};
     use crate::backend::artifacts::Artifacts;
     use crate::backend::messages::{NO_RECORDING, NO_UI_TREE_WAIT, RECORDING_RUNNING};
     use crate::backend::tool::Tool;
     use crate::common::rt::{Child, Runtime};
     use crate::common::traits::flavour::{CaptureBackend, CaptureSession};
     use crate::session::{
-        Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target,
+        Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target, UiTreeMode,
         WaitCondition,
     };
-    use rupicola_protocol::UiAction;
+    use rupicola_protocol::{UiAction, UiSnapshot};
     use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg_attr(feature = "async", async_trait::async_trait)]
     impl CaptureBackend for AndroidAdbBackend {
@@ -30,13 +32,13 @@ pub(crate) mod flavour {
         }
 
         fn capabilities(&self) -> Capabilities {
-            Capabilities::of(&[Capability::Video])
+            Capabilities::of(&[Capability::Video, Capability::UiTree])
         }
 
         async fn start(
             &self,
             _target: &Target,
-            _environment: &Environment,
+            environment: &Environment,
             out: &Path,
         ) -> Result<Box<dyn CaptureSession>, CaptureError> {
             Runtime::require(Tool(ADB)).await?;
@@ -56,6 +58,8 @@ pub(crate) mod flavour {
                 backend: self.clone(),
                 artifacts: Artifacts::new(out),
                 recording: None,
+                tree: environment.ui_tree != UiTreeMode::Off,
+                density: None,
             }))
         }
     }
@@ -64,6 +68,10 @@ pub(crate) mod flavour {
         backend: AndroidAdbBackend,
         artifacts: Artifacts,
         recording: Option<Child>,
+        /// Whether the plan wants the view hierarchy with each screenshot.
+        tree: bool,
+        /// The screen's density, asked once.
+        density: Option<u32>,
     }
 
     impl AndroidSession {
@@ -71,6 +79,42 @@ pub(crate) mod flavour {
             CaptureError::environment(
                 "this backend cannot act on the device: only wait-ms is supported",
             )
+        }
+
+        /// The view hierarchy of what the screen shows, for a screenshot of `screen` pixels.
+        async fn view_tree(&mut self, screen: [u32; 2]) -> Result<UiSnapshot, CaptureError> {
+            let density = if let Some(density) = self.density {
+                density
+            } else {
+                let output = Runtime::output(self.backend.density())
+                    .await
+                    .map_err(|e| CaptureError::environment(format!("run {ADB}: {e}")))?;
+                let density = density_dpi(&String::from_utf8_lossy(&output.stdout))
+                    .ok_or_else(|| CaptureError::target("the device did not state its density"))?;
+                self.density = Some(density);
+                density
+            };
+            let mut failure = String::new();
+            for attempt in 0..DUMP_ATTEMPTS {
+                if attempt > 0 {
+                    Runtime::sleep(DUMP_RETRY_MS).await;
+                }
+                let output = Runtime::output(self.backend.ui_dump()).await.map_err(|e| {
+                    CaptureError::environment(format!("run {ADB} uiautomator: {e}"))
+                })?;
+                match AndroidDump::parse(&String::from_utf8_lossy(&output.stdout)) {
+                    Ok(dump) => {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_or(0, |elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(0));
+                        return Ok(dump.into_snapshot(screen, density, now));
+                    }
+                    Err(error) => failure = error.to_string(),
+                }
+            }
+            Err(CaptureError::target(format!(
+                "uiautomator gave no view hierarchy after {DUMP_ATTEMPTS} tries: {failure}"
+            )))
         }
 
         async fn discard_recording(&mut self) {
@@ -119,10 +163,17 @@ pub(crate) mod flavour {
             Runtime::write(&png, &output.stdout)
                 .await
                 .map_err(|e| CaptureError::environment(format!("write {}: {e}", png.display())))?;
+            let snapshot = if self.tree {
+                let screen = png_size(&output.stdout)
+                    .ok_or_else(|| CaptureError::target("the screenshot is not a PNG"))?;
+                Some(self.view_tree(screen).await?)
+            } else {
+                None
+            };
             Ok(Checkpoint {
                 id: id.to_owned(),
                 png,
-                snapshot: None,
+                snapshot,
             })
         }
 

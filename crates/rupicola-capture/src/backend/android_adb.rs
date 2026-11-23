@@ -12,6 +12,13 @@ const INTERRUPT_SIGNAL: &str = "-2";
 const SCREENRECORD: &str = "screenrecord";
 /// Milliseconds the device gets to write the end of a recording after the interrupt.
 pub(crate) const RECORDING_FLUSH_MS: u64 = 500;
+/// `uiautomator dump` fails while the screen is still animating, so it is tried again.
+pub(crate) const DUMP_ATTEMPTS: u32 = 3;
+/// Milliseconds between two tries of the dump.
+pub(crate) const DUMP_RETRY_MS: u64 = 400;
+/// Where `uiautomator dump` writes when it is asked to use the terminal: the XML comes back
+/// on stdout and nothing is left on the device.
+const DUMP_TO_TERMINAL: &str = "/dev/tty";
 
 /// Mobile Android capture backend over `adb` (`screencap` + `screenrecord`).
 ///
@@ -48,6 +55,26 @@ impl AndroidAdbBackend {
         let mut command = self.adb();
         command
             .args(["exec-out", "screencap", "-p"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+
+    /// Dumps the view hierarchy; the XML comes on stdout, after whatever the device prints.
+    pub(crate) fn ui_dump(&self) -> Command {
+        let mut command = self.adb();
+        command
+            .args(["exec-out", "uiautomator", "dump", DUMP_TO_TERMINAL])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+
+    /// Asks the screen's density.
+    pub(crate) fn density(&self) -> Command {
+        let mut command = self.adb();
+        command
+            .args(["shell", "wm", "density"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         command

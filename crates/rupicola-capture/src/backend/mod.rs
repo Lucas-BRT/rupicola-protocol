@@ -3,6 +3,7 @@
 //! [`crate::sync`] and [`crate::asynchronous`].
 
 pub(crate) mod android_adb;
+pub(crate) mod android_ui;
 pub(crate) mod annotate;
 pub(crate) mod artifacts;
 pub(crate) mod cdp;

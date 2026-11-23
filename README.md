@@ -125,6 +125,8 @@ gif: target/capture-a-page/click.gif
 
 `run_plan` opens one session for the whole plan, so the target launches once however many checkpoints are taken. It returns a `Bundle` with the `checkpoints` (each with its PNG and, on backends that have one, a UI tree snapshot), the `clips` and any `warnings`.
 
+A checkpoint keeps a UI tree only when the plan asks: `environment.ui_tree` is `off` (the default: no tree, and a backend does not collect one), `structure` (kinds, bounds and states, with no titles, labels or values) or `full`. A tree lists the text on screen, which can be personal, so `structure` is the mode for an application that shows user data. Every node has a `kind` from one small vocabulary (`button`, `text-box`, `list`, ...) next to the platform's own `role`, and each tree says where it came from (`source`). Bounds are logical: multiply by `scale_factor` to get the pixels of the screenshot taken with the tree.
+
 Before anything starts, `run_plan` compares what the plan asks for with what the backend can do (`backend.capabilities()`). A plan the backend cannot honour is refused with an `Environment` error naming what is missing, unless `allow_degraded` is `true`: then it runs without those steps and records a warning for each. Errors carry a class: `Environment` means the machine could not run the backend (a missing tool, no display); `Target` means the application failed to start or answer.
 
 ### 5. Use another backend
@@ -194,7 +196,7 @@ mp4_to_gif(&bundle.clips[0].mp4, Path::new("click.gif"), 320)
 | `LinuxX11Backend` | Linux Desktop (GTK4, Iced, egui, Qt) | `Xvfb`, `ffmpeg`, `python3` with libX11 and libXtst | pointer input, video |
 | `GtkBroadwayBackend` | Linux GTK4 (no X11/Wayland) | `gtk4-broadwayd`, `WebBackend` | pointer input, video |
 | `LinuxWaylandBackend` | Linux Wayland (nested `cosmic-comp`) | `Xvfb`, the compositor, `ffmpeg`, `python3` with libX11 and libXtst | pointer input, video |
-| `AndroidAdbBackend` | Android Emulator / Device | `adb` | video (screenshots always) |
+| `AndroidAdbBackend` | Android Emulator / Device | `adb` | UI tree (UI Automator), video (screenshots always) |
 
 Every backend takes screenshots. A capability a plan needs and a backend lacks is checked before anything starts (see [Getting Started](#4-run-it)).
 
