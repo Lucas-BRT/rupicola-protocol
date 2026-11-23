@@ -10,16 +10,10 @@ pub mod annotate;
 mod cdp;
 #[cfg(unix)]
 mod gtk_broadway;
-#[cfg(unix)]
-mod linux_wayland;
-#[cfg(unix)]
-mod linux_x11;
 #[cfg(test)]
 mod tests;
 mod tool;
 mod web;
-#[cfg(unix)]
-mod xvfb;
 
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
@@ -29,8 +23,6 @@ pub use crate::common::traits::asynchronous::{CaptureBackend, CaptureSession};
 pub use annotate::{annotate_png, annotate_video, mp4_to_gif};
 pub use cdp::CdpDiscovery;
 pub use web::WebDiscovery;
-#[cfg(unix)]
-pub use xvfb::XvfbSession;
 
 /// A std command, ready to run on tokio and to be killed when dropped.
 pub(crate) trait IntoTokio {

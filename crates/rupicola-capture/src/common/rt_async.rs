@@ -5,20 +5,40 @@ use crate::backend::tool::Tool;
 use crate::session::CaptureError;
 use std::io;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Output};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::time::Duration;
+use tokio::io::AsyncWriteExt as _;
 
-/// A process started for a session; it is killed when dropped.
-pub(crate) struct Child(tokio::process::Child);
+/// A process started for a session, with the pipes its command asked for. It is killed
+/// when dropped.
+pub(crate) struct Child {
+    inner: tokio::process::Child,
+    stdin: Option<tokio::process::ChildStdin>,
+}
 
 impl Child {
     /// Stops the process; there is nothing to do when it already ended.
     pub(crate) async fn kill(&mut self) {
-        let _ = self.0.kill().await;
+        let _ = self.inner.kill().await;
     }
 
     pub(crate) async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.0.wait().await
+        self.inner.wait().await
+    }
+
+    /// Writes `data` to the process's stdin and flushes it.
+    pub(crate) async fn write(&mut self, data: &[u8]) -> io::Result<()> {
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
+        stdin.write_all(data).await?;
+        stdin.flush().await
+    }
+
+    /// Closes the process's stdin.
+    pub(crate) fn close_stdin(&mut self) {
+        self.stdin = None;
     }
 }
 
@@ -34,7 +54,11 @@ pub(crate) struct Runtime;
 
 impl Runtime {
     pub(crate) fn spawn(command: Command) -> io::Result<Child> {
-        tokio_command(command).spawn().map(Child)
+        let mut inner = tokio_command(command).spawn()?;
+        Ok(Child {
+            stdin: inner.stdin.take(),
+            inner,
+        })
     }
 
     pub(crate) async fn status(command: Command) -> io::Result<ExitStatus> {
@@ -49,15 +73,18 @@ impl Runtime {
         tokio::time::sleep(Duration::from_millis(ms)).await;
     }
 
+    /// Whether `tool` is on `PATH`.
+    pub(crate) async fn is_available(tool: Tool) -> bool {
+        Self::status(tool.probe())
+            .await
+            .is_ok_and(|status| status.success())
+    }
+
     /// # Errors
     ///
     /// An environment error naming the program when it is not on `PATH`.
     pub(crate) async fn require(tool: Tool) -> Result<(), CaptureError> {
-        if tokio_command(tool.probe())
-            .status()
-            .await
-            .is_ok_and(|status| status.success())
-        {
+        if Self::is_available(tool).await {
             Ok(())
         } else {
             Err(tool.missing())
@@ -68,11 +95,52 @@ impl Runtime {
         tokio::fs::create_dir_all(path).await
     }
 
+    pub(crate) async fn remove_dir_all(path: &Path) -> io::Result<()> {
+        tokio::fs::remove_dir_all(path).await
+    }
+
+    pub(crate) async fn rename(from: &Path, to: &Path) -> io::Result<()> {
+        tokio::fs::rename(from, to).await
+    }
+
     pub(crate) async fn write(path: &Path, contents: &[u8]) -> io::Result<()> {
         tokio::fs::write(path, contents).await
     }
 
     pub(crate) async fn exists(path: &Path) -> bool {
         tokio::fs::try_exists(path).await.unwrap_or(false)
+    }
+
+    /// The names of the entries of `dir`; empty when it cannot be read.
+    pub(crate) async fn file_names(dir: &Path) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if let Ok(name) = entry.file_name().into_string() {
+                    names.push(name);
+                }
+            }
+        }
+        names
+    }
+
+    /// Restricts `path` to its owner (mode 0700 on Unix).
+    pub(crate) async fn set_private(path: &Path) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).await
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            Ok(())
+        }
+    }
+
+    /// A new file at `path`, as the stdout or stderr of a process.
+    pub(crate) async fn log_file(path: &Path) -> io::Result<Stdio> {
+        let file = tokio::fs::File::create(path).await?;
+        Ok(Stdio::from(file.into_std().await))
     }
 }
