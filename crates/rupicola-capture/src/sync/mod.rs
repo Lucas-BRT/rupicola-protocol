@@ -5,9 +5,6 @@
 //! a session from a declarative [`crate::session::Plan`], refusing up front a plan the backend cannot
 //! honour unless the plan allows a degraded run.
 
-#[cfg(test)]
-mod tests;
-
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};

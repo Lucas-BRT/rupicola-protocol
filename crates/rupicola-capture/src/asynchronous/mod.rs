@@ -6,9 +6,6 @@
 //! backend cannot honour unless the plan allows a degraded run. Every process is started
 //! with `kill_on_drop`, so a session that is dropped without `finish` still cleans up.
 
-#[cfg(test)]
-mod tests;
-
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};

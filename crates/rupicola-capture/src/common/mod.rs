@@ -17,6 +17,8 @@ pub(crate) mod rt_async;
 #[cfg(feature = "sync")]
 pub(crate) mod rt_sync;
 pub(crate) mod runner;
+#[cfg(test)]
+pub(crate) mod tests;
 pub(crate) mod traits;
 pub(crate) mod web;
 #[cfg(unix)]
