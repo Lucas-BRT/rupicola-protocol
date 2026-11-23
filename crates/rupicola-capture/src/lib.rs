@@ -14,6 +14,7 @@ compile_error!(
 pub mod asynchronous;
 
 mod backend;
+mod common;
 pub mod session;
 #[cfg(feature = "sync")]
 pub mod sync;

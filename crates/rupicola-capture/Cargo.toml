@@ -18,6 +18,7 @@ sync = []
 async = ["dep:async-trait", "dep:tokio"]
 
 [dependencies]
+maybe-async-cfg.workspace = true
 async-trait = { workspace = true, optional = true }
 rupicola-protocol.workspace = true
 serde.workspace = true

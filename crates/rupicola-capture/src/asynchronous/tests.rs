@@ -1,5 +1,11 @@
 use super::*;
+use crate::session::{
+    Capabilities, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
+};
 use crate::session::{Capability, ErrorClass, Plan, Step};
+use async_trait::async_trait;
+use rupicola_protocol::UiAction;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

@@ -1,27 +1,34 @@
 use super::*;
+use crate::session::{
+    Capabilities, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
+};
 use crate::session::{Capability, ErrorClass, Plan, Step};
+use rupicola_protocol::UiAction;
+use std::path::Path;
 use std::path::PathBuf;
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex};
+
+type Calls = Arc<Mutex<Vec<String>>>;
 
 /// Records every call so tests can check order and cleanup.
 #[derive(Default)]
-struct Journal(Rc<RefCell<Vec<String>>>);
+struct Journal(Calls);
 
 struct Fake {
     capabilities: Capabilities,
-    journal: Rc<RefCell<Vec<String>>>,
+    journal: Calls,
     fail_on: Option<&'static str>,
 }
 
 struct FakeSession {
-    journal: Rc<RefCell<Vec<String>>>,
+    journal: Calls,
     fail_on: Option<&'static str>,
 }
 
 impl FakeSession {
     fn note(&self, entry: String) -> Result<(), CaptureError> {
         let fails = self.fail_on.is_some_and(|prefix| entry.starts_with(prefix));
-        self.journal.borrow_mut().push(entry);
+        self.journal.lock().unwrap().push(entry);
         if fails {
             Err(CaptureError::target("boom"))
         } else {
@@ -73,9 +80,9 @@ impl CaptureBackend for Fake {
         _: &Environment,
         _: &Path,
     ) -> Result<Box<dyn CaptureSession>, CaptureError> {
-        self.journal.borrow_mut().push("start".to_owned());
+        self.journal.lock().unwrap().push("start".to_owned());
         Ok(Box::new(FakeSession {
-            journal: self.journal.clone(),
+            journal: Arc::clone(&self.journal),
             fail_on: self.fail_on,
         }))
     }
@@ -121,7 +128,7 @@ fn fake(capabilities: Capabilities, fail_on: Option<&'static str>) -> (Fake, Jou
     let journal = Journal::default();
     let backend = Fake {
         capabilities,
-        journal: journal.0.clone(),
+        journal: Arc::clone(&journal.0),
         fail_on,
     };
     (backend, journal)
@@ -133,7 +140,7 @@ fn one_session_serves_every_checkpoint() {
     let bundle = run_plan(&backend, &plan(flow(), false), Path::new("out")).unwrap();
     assert_eq!(bundle.checkpoints.len(), 2);
     assert_eq!(bundle.clips.len(), 1);
-    let calls = journal.0.borrow();
+    let calls = journal.0.lock().unwrap();
     assert_eq!(calls.iter().filter(|call| *call == "start").count(), 1);
     assert_eq!(calls.last().map(String::as_str), Some("finish"));
 }
@@ -144,7 +151,7 @@ fn a_plan_the_backend_cannot_honour_is_refused_before_starting() {
     let error = run_plan(&backend, &plan(flow(), false), Path::new("out")).unwrap_err();
     assert_eq!(error.class, ErrorClass::Environment);
     assert!(error.message.contains("actions") && error.message.contains("video"));
-    assert!(journal.0.borrow().is_empty());
+    assert!(journal.0.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -162,7 +169,7 @@ fn the_session_is_finished_after_a_failed_step() {
     let error = run_plan(&backend, &plan(flow(), false), Path::new("out")).unwrap_err();
     assert_eq!(error.class, ErrorClass::Target);
     assert_eq!(
-        journal.0.borrow().last().map(String::as_str),
+        journal.0.lock().unwrap().last().map(String::as_str),
         Some("finish")
     );
 }
