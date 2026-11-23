@@ -4,6 +4,7 @@
 //! same `Runtime`.
 
 pub(crate) mod android_adb;
+pub(crate) mod annotate;
 pub(crate) mod cdp;
 #[cfg(unix)]
 pub(crate) mod gtk_broadway;

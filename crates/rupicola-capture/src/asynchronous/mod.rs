@@ -6,28 +6,14 @@
 //! backend cannot honour unless the plan allows a degraded run. Every process is started
 //! with `kill_on_drop`, so a session that is dropped without `finish` still cleans up.
 
-pub mod annotate;
 #[cfg(test)]
 mod tests;
 
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};
+pub use crate::common::annotate::asynchronous::{annotate_png, annotate_video, mp4_to_gif};
 pub use crate::common::cdp::asynchronous::CdpDiscovery;
 pub use crate::common::runner::asynchronous::run_plan;
 pub use crate::common::traits::asynchronous::{CaptureBackend, CaptureSession};
 pub use crate::common::web::asynchronous::WebDiscovery;
-pub use annotate::{annotate_png, annotate_video, mp4_to_gif};
-
-/// A std command, ready to run on tokio and to be killed when dropped.
-pub(crate) trait IntoTokio {
-    fn into_tokio(self) -> tokio::process::Command;
-}
-
-impl IntoTokio for std::process::Command {
-    fn into_tokio(self) -> tokio::process::Command {
-        let mut command = tokio::process::Command::from(self);
-        command.kill_on_drop(true);
-        command
-    }
-}
