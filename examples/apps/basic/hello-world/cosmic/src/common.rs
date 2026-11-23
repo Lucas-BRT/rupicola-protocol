@@ -6,6 +6,7 @@
 )]
 
 use rupicola_protocol::{
+    SnapshotSource, WidgetKind,
     PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, ToolkitKind, UiAction, UiSnapshot,
     WidgetNode, WidgetState, read_ndjson, write_ndjson,
 };
@@ -28,9 +29,11 @@ pub fn hello_world_tree(
         viewport: [1280, 720],
         scale_factor: 1.0,
         timestamp_ms: 1_795_300_000_000,
+        source: SnapshotSource::Adapter,
         root: WidgetNode {
             id: "root".into(),
             role: "window".into(),
+            kind: WidgetKind::Window,
             label: Some(title.into()),
             value: None,
             bounds: Rect {
@@ -49,6 +52,7 @@ pub fn hello_world_tree(
                 WidgetNode {
                     id: "hello-heading".into(),
                     role: "heading".into(),
+                    kind: WidgetKind::Heading,
                     label: Some("Hello, world!".into()),
                     value: None,
                     bounds: Rect {
@@ -68,6 +72,7 @@ pub fn hello_world_tree(
                 WidgetNode {
                     id: "counter-btn".into(),
                     role: "button".into(),
+                    kind: WidgetKind::Button,
                     label: Some("Increment (0)".into()),
                     value: Some("0".into()),
                     bounds: Rect {
