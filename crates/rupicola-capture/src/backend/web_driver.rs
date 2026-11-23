@@ -16,6 +16,9 @@ pub(crate) enum DriverRequest<'a> {
         color_scheme: Option<ColorScheme>,
         reduced_motion: bool,
         warmup_ms: u64,
+        locale: Option<&'a str>,
+        timeout_ms: Option<u64>,
+        frame_interval_ms: Option<u64>,
     },
     Perform {
         action: &'a UiAction,
@@ -61,7 +64,7 @@ impl<'a> DriverRequest<'a> {
     pub(crate) fn launch(
         backend: &'a WebBackend,
         target: &'a Target,
-        environment: &Environment,
+        environment: &'a Environment,
     ) -> Self {
         Self::Launch {
             engine: &backend.browser_engine,
@@ -71,6 +74,9 @@ impl<'a> DriverRequest<'a> {
             color_scheme: environment.color_scheme,
             reduced_motion: environment.reduced_motion,
             warmup_ms: environment.warmup_ms,
+            locale: environment.locale.as_deref(),
+            timeout_ms: environment.timeout_ms,
+            frame_interval_ms: environment.frame_interval_ms,
         }
     }
 }

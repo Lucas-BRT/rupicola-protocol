@@ -11,6 +11,8 @@ pub(crate) const FRAME_LIST: &str = "frames.txt";
 const LAST_FRAME_SECONDS: f64 = 0.1;
 /// Milliseconds per second.
 const MS_PER_SECOND: f64 = 1000.0;
+/// Environment variable that names a Playwright module directory.
+const PLAYWRIGHT_DIR_ENV: &str = "RUPICOLA_PLAYWRIGHT_DIR";
 const SESSION_DRIVER: &str = include_str!("../playwright_session_driver.js");
 
 /// Headless Web capture backend powered by Playwright (`chromium`, `firefox`, or `webkit`).
@@ -36,13 +38,10 @@ impl WebBackend {
                 PathBuf::from("node"),
                 home.join(".local/share/mise/installs/node/lts/bin/node"),
             ],
-            modules: [
-                std::env::var_os("RUPICOLA_PLAYWRIGHT_DIR").map(PathBuf::from),
-                Some(home.join("Projects/pokemon-survivors/node_modules/playwright")),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
+            modules: std::env::var_os(PLAYWRIGHT_DIR_ENV)
+                .map(PathBuf::from)
+                .into_iter()
+                .collect(),
         })
     }
 

@@ -43,6 +43,9 @@ mod flavour {
     /// The shortest acceptable clip: most of the 600 ms walkthrough.
     const MIN_CLIP_SECONDS: f64 = 0.4;
     /// A port nothing listens on.
+    const LOCALE: &str = "pt-BR";
+    const TIMEOUT_MS: u64 = 5000;
+    const ADD_BUTTON_ID: &str = "add-btn";
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/";
 
     /// Serves the CRUD example until the returned flag is set.
@@ -198,6 +201,39 @@ mod flavour {
             .await
             .unwrap_err();
         assert_eq!(error.class, ErrorClass::Target);
+        let _ = fs::remove_dir_all(&out);
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_target_that_names_a_selector_engine_is_used_as_given() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let (url, stop) = serve_example();
+        let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-session-web-css"));
+        let _ = fs::remove_dir_all(&out);
+        let mut environment = Environment::new(VIEWPORT);
+        environment.warmup_ms = 0;
+        environment.locale = Some(LOCALE.to_owned());
+        environment.timeout_ms = Some(TIMEOUT_MS);
+        let steps = vec![
+            // A plain id would be read as an element id, so this only works as given.
+            Step::Action {
+                action: UiAction::Click {
+                    target_id: format!("css=button#{ADD_BUTTON_ID}"),
+                },
+            },
+            Step::Checkpoint {
+                id: "after".to_owned(),
+            },
+        ];
+        let mut plan = plan(&url, steps);
+        plan.environment = environment;
+        let bundle = run_plan(&backend, &plan, &out).await.unwrap();
+        stop.store(true, Ordering::Relaxed);
+        assert!(bundle.checkpoints[0].png.is_file());
         let _ = fs::remove_dir_all(&out);
     }
 }

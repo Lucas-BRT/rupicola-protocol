@@ -83,6 +83,16 @@ pub struct Environment {
     pub reduced_motion: bool,
     #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
+    /// Locale of the target, such as `en-US`; backends that have none ignore it.
+    #[serde(default)]
+    pub locale: Option<String>,
+    /// Longest the target gets for one step, in milliseconds; the backend's own limit when
+    /// unset.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Milliseconds between the frames of a recording; the backend's own rate when unset.
+    #[serde(default)]
+    pub frame_interval_ms: Option<u64>,
 }
 
 impl Environment {
@@ -95,6 +105,9 @@ impl Environment {
             color_scheme: None,
             reduced_motion: false,
             warmup_ms: DEFAULT_WARMUP_MS,
+            locale: None,
+            timeout_ms: None,
+            frame_interval_ms: None,
         }
     }
 }

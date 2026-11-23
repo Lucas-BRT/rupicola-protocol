@@ -15,9 +15,12 @@ let browser = null;
 let context = null;
 let page = null;
 let recording = null;
+let waitTimeout = WAIT_TIMEOUT_MS;
+let frameInterval = FRAME_INTERVAL_MS;
 
+/** A target is a Playwright selector when it says so, and the id of an element otherwise. */
 const selector = (id) =>
-  id.startsWith('[') || id.startsWith('.') || id.startsWith('#') ? id : '#' + id;
+  /^(css|text|xpath|role|id)=|^\/\/|^[[.#]/.test(id) ? id : '#' + id;
 
 class DriverError extends Error {
   constructor(errorClass, message) {
@@ -39,8 +42,14 @@ async function launch(request) {
     deviceScaleFactor: request.scale,
     colorScheme: request.color_scheme || 'no-preference',
     reducedMotion: request.reduced_motion ? 'reduce' : 'no-preference',
+    ...(request.locale ? { locale: request.locale } : {}),
   });
   page = await context.newPage();
+  if (request.timeout_ms) {
+    waitTimeout = request.timeout_ms;
+    page.setDefaultTimeout(request.timeout_ms);
+  }
+  if (request.frame_interval_ms) frameInterval = request.frame_interval_ms;
   try {
     await page.goto(request.url, { waitUntil: 'networkidle' });
   } catch (error) {
@@ -80,12 +89,12 @@ async function waitFor(condition) {
     case 'visible':
       return page.waitForSelector(selector(condition.target_id), {
         state: 'visible',
-        timeout: WAIT_TIMEOUT_MS,
+        timeout: waitTimeout,
       });
     case 'text':
       return page.getByText(condition.text).first().waitFor({
         state: 'visible',
-        timeout: WAIT_TIMEOUT_MS,
+        timeout: waitTimeout,
       });
     default:
       throw new Error(`unknown wait ${condition.wait}`);
@@ -144,7 +153,7 @@ function startRecording(dir) {
       const file = `${dir}/frame${String(index++).padStart(6, '0')}.jpg`;
       await page.screenshot({ path: file, type: 'jpeg', quality: FRAME_QUALITY });
       state.frames.push({ file, ms: started });
-      await page.waitForTimeout(Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started)));
+      await page.waitForTimeout(Math.max(0, frameInterval - (Date.now() - started)));
     }
   })();
   recording = state;
