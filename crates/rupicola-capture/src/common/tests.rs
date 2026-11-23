@@ -10,17 +10,56 @@ mod flavour {
     use crate::common::runner::flavour::run_plan;
     use crate::common::traits::flavour::{CaptureBackend, CaptureSession};
     use crate::session::{
-        Capabilities, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
+        Capabilities, CaptureError, Checkpoint, Clip, Environment, Target, UiTreeMode,
+        WaitCondition,
     };
     use crate::session::{Capability, ErrorClass, Plan, Step};
     #[allow(unused_imports)]
     use core::prelude::v1::test as sync_test;
-    use rupicola_protocol::UiAction;
+    use rupicola_protocol::{
+        Rect, SnapshotSource, ToolkitKind, UiAction, UiSnapshot, WidgetKind, WidgetNode,
+        WidgetState,
+    };
     use std::path::Path;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     #[allow(unused_imports)]
     use tokio::test as async_test;
+
+    const SECRET: &str = "ana@example.com";
+
+    /// A tree every fake backend returns, whether or not the plan asked for it.
+    fn snapshot() -> UiSnapshot {
+        UiSnapshot {
+            protocol_version: 1,
+            app_id: "app".to_owned(),
+            toolkit: ToolkitKind::WebDom,
+            title: Some(SECRET.to_owned()),
+            viewport: [800, 600],
+            scale_factor: 1.0,
+            timestamp_ms: 0,
+            source: SnapshotSource::Dom,
+            root: WidgetNode {
+                id: "root".to_owned(),
+                role: "div".to_owned(),
+                kind: WidgetKind::Group,
+                label: Some(SECRET.to_owned()),
+                value: Some(SECRET.to_owned()),
+                bounds: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 800.0,
+                    height: 600.0,
+                },
+                state: WidgetState {
+                    visible: true,
+                    ..WidgetState::default()
+                },
+                style_hint: None,
+                children: Vec::new(),
+            },
+        }
+    }
 
     type Calls = Arc<Mutex<Vec<String>>>;
 
@@ -64,7 +103,7 @@ mod flavour {
             Ok(Checkpoint {
                 id: id.to_owned(),
                 png: PathBuf::from(format!("{id}.png")),
-                snapshot: None,
+                snapshot: Some(snapshot()),
             })
         }
         async fn start_recording(&mut self) -> Result<(), CaptureError> {
@@ -225,5 +264,81 @@ mod flavour {
         let original = plan(flow(), true);
         let json = serde_json::to_string(&original).unwrap();
         assert_eq!(serde_json::from_str::<Plan>(&json).unwrap(), original);
+    }
+
+    fn with_tree(mode: UiTreeMode, steps: Vec<Step>, allow_degraded: bool) -> Plan {
+        let mut plan = plan(steps, allow_degraded);
+        plan.environment.ui_tree = mode;
+        plan
+    }
+
+    fn one_checkpoint() -> Vec<Step> {
+        vec![Step::Checkpoint {
+            id: "home".to_owned(),
+        }]
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn the_plan_decides_how_much_of_the_tree_a_checkpoint_keeps() {
+        let (backend, _) = fake(FULL, None);
+        let run = |mode| {
+            let plan = with_tree(mode, one_checkpoint(), false);
+            let backend = &backend;
+            async move {
+                run_plan(backend, &plan, Path::new("out"))
+                    .await
+                    .unwrap()
+                    .checkpoints
+                    .remove(0)
+                    .snapshot
+            }
+        };
+        assert_eq!(
+            run(UiTreeMode::Off).await,
+            None,
+            "a backend's tree is dropped when off"
+        );
+        let full = run(UiTreeMode::Full).await.unwrap();
+        assert_eq!(full.title.as_deref(), Some(SECRET));
+        assert_eq!(full.root.label.as_deref(), Some(SECRET));
+        let structure = run(UiTreeMode::Structure).await.unwrap();
+        assert_eq!(structure.title, None);
+        assert_eq!(structure.root.label, None);
+        assert_eq!(structure.root.value, None);
+        assert_eq!(structure.root.kind, WidgetKind::Group);
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn asking_for_a_tree_a_backend_cannot_give_refuses_the_plan_or_degrades_it() {
+        let (backend, _) = fake(SCREENSHOT_ONLY, None);
+        let strict = with_tree(UiTreeMode::Full, one_checkpoint(), false);
+        let error = run_plan(&backend, &strict, Path::new("out"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.class, ErrorClass::Environment);
+        assert!(error.message.contains("ui-tree"), "{}", error.message);
+        let lenient = with_tree(UiTreeMode::Full, one_checkpoint(), true);
+        let bundle = run_plan(&backend, &lenient, Path::new("out"))
+            .await
+            .unwrap();
+        assert_eq!(bundle.checkpoints.len(), 1, "the screenshot is still taken");
+        assert_eq!(bundle.warnings, ["backend fake lacks ui-tree; skipped"]);
+    }
+
+    #[test]
+    fn a_plan_without_a_tree_mode_means_off() {
+        let json =
+            r#"{"target":{"command":"app"},"environment":{"viewport":[800,600]},"steps":[]}"#;
+        let plan: Plan = serde_json::from_str(json).unwrap();
+        assert_eq!(plan.environment.ui_tree, UiTreeMode::Off);
+        assert!(!plan.needs().contains(Capability::UiTree));
+        let asked = with_tree(UiTreeMode::Structure, Vec::new(), false);
+        assert!(asked.needs().contains(Capability::UiTree));
+        assert_eq!(
+            serde_json::to_value(UiTreeMode::Structure).unwrap(),
+            "structure"
+        );
     }
 }

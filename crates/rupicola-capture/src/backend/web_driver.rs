@@ -1,6 +1,6 @@
 use super::web::WebBackend;
 use crate::session::{CaptureError, ColorScheme, Environment, ErrorClass, Target, WaitCondition};
-use rupicola_protocol::{UiAction, UiSnapshot};
+use rupicola_protocol::{SnapshotSource, UiAction, UiSnapshot, WidgetKind, WidgetNode};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -28,6 +28,8 @@ pub(crate) enum DriverRequest<'a> {
     },
     Screenshot {
         path: &'a Path,
+        /// Whether to walk the page's DOM too; a plan that wants no tree never pays for it.
+        tree: bool,
     },
     StartRecording {
         dir: &'a Path,
@@ -92,6 +94,22 @@ impl DriverRequest<'_> {
 }
 
 impl DriverReply {
+    /// The page's tree, marked as a DOM and with every node in the shared vocabulary.
+    pub(crate) fn tree(&mut self) -> Option<UiSnapshot> {
+        self.snapshot.take().map(|mut tree| {
+            tree.source = SnapshotSource::Dom;
+            Self::classify(&mut tree.root);
+            tree
+        })
+    }
+
+    fn classify(node: &mut WidgetNode) {
+        node.kind = WidgetKind::from_dom(&node.role);
+        for child in &mut node.children {
+            Self::classify(child);
+        }
+    }
+
     /// Reads one JSON line the driver sent.
     pub(crate) fn from_line(line: &str) -> std::io::Result<Self> {
         serde_json::from_str(line.trim_end())

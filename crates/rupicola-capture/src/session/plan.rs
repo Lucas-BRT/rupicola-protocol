@@ -1,5 +1,6 @@
 use super::{
-    Capabilities, Capability, Checkpoint, Clip, DEFAULT_SCALE, Environment, Target, WaitCondition,
+    Capabilities, Capability, Checkpoint, Clip, DEFAULT_SCALE, Environment, Target, UiTreeMode,
+    WaitCondition,
 };
 use super::{CaptureError, checked_id};
 use rupicola_protocol::UiAction;
@@ -68,6 +69,9 @@ impl Plan {
         }
         if (self.environment.scale - DEFAULT_SCALE).abs() > f64::EPSILON {
             needed = needed.with(Capability::Scale);
+        }
+        if self.environment.ui_tree != UiTreeMode::Off {
+            needed = needed.with(Capability::UiTree);
         }
         for step in &self.steps {
             needed = needed.union(step.needs());

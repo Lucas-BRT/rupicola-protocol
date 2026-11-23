@@ -103,6 +103,20 @@ async function waitFor(condition) {
 
 function snapshot() {
   return page.evaluate(() => {
+    // The ARIA role when the element has one; otherwise what the element is: an input by its
+    // type, anything else by its tag.
+    function roleOf(el) {
+      const explicit = el.getAttribute('role');
+      if (explicit) return explicit;
+      const tag = el.tagName.toLowerCase();
+      if (tag !== 'input') return tag;
+      const byType = {
+        checkbox: 'checkbox', radio: 'radio', range: 'slider',
+        button: 'button', submit: 'button', reset: 'button', image: 'button',
+      };
+      return byType[(el.getAttribute('type') || 'text').toLowerCase()] || 'textbox';
+    }
+
     function walk(el, idx) {
       const r = el.getBoundingClientRect();
       const s = getComputedStyle(el);
@@ -113,7 +127,7 @@ function snapshot() {
       for (const child of el.children) children.push(walk(child, i++));
       return {
         id: el.id || `${el.tagName.toLowerCase()}-${idx}`,
-        role: el.getAttribute('role') || el.tagName.toLowerCase(),
+        role: roleOf(el),
         label: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 120) || null,
         value: 'value' in el && typeof el.value === 'string' ? el.value : null,
         bounds: { x: r.x, y: r.y, width: r.width, height: r.height },
@@ -178,7 +192,7 @@ async function handle(request) {
       return waitFor(request.condition);
     case 'screenshot':
       await page.screenshot({ path: request.path });
-      return { snapshot: await snapshot() };
+      return request.tree ? { snapshot: await snapshot() } : {};
     case 'start-recording':
       return startRecording(request.dir);
     case 'stop-recording':

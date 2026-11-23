@@ -46,7 +46,12 @@ pub(crate) mod flavour {
             match step {
                 Step::Action { action } => session.perform(action).await?,
                 Step::Wait { condition } => session.wait_for(condition).await?,
-                Step::Checkpoint { id } => bundle.checkpoints.push(session.screenshot(id).await?),
+                Step::Checkpoint { id } => {
+                    let mut checkpoint = session.screenshot(id).await?;
+                    // Whatever the backend collected, the plan decides what is kept.
+                    checkpoint.snapshot = plan.environment.ui_tree.apply(checkpoint.snapshot);
+                    bundle.checkpoints.push(checkpoint);
+                }
                 Step::StartRecording => session.start_recording().await?,
                 Step::StopRecording { id } => bundle.clips.push(session.stop_recording(id).await?),
             }

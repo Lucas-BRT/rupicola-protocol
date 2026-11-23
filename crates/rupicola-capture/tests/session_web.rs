@@ -17,9 +17,11 @@ mod flavour {
 
     use rupicola_capture::{
         flavour::{WebBackend, WebDiscovery as _, run_plan},
-        session::{ColorScheme, Environment, ErrorClass, Plan, Step, Target, WaitCondition},
+        session::{
+            ColorScheme, Environment, ErrorClass, Plan, Step, Target, UiTreeMode, WaitCondition,
+        },
     };
-    use rupicola_protocol::UiAction;
+    use rupicola_protocol::{SnapshotSource, UiAction, WidgetKind};
     use std::{
         fs,
         io::{Read, Write},
@@ -93,6 +95,7 @@ mod flavour {
         let mut environment = Environment::new(VIEWPORT);
         environment.warmup_ms = 0;
         environment.color_scheme = Some(ColorScheme::Dark);
+        environment.ui_tree = UiTreeMode::Full;
         Plan {
             target: Target {
                 command: url.to_owned(),
@@ -158,12 +161,67 @@ mod flavour {
             after.find_by_id("counter").unwrap().label.as_deref(),
             Some(COUNTER_AFTER_ADD)
         );
+        assert_eq!(after.source, SnapshotSource::Dom);
+        assert_eq!(
+            after.find_by_id(ADD_BUTTON_ID).unwrap().kind,
+            WidgetKind::Button,
+            "the page's own button is a button in the shared vocabulary"
+        );
+        assert_eq!(
+            after.find_by_id("new-task").unwrap().kind,
+            WidgetKind::TextBox
+        );
         assert!(bundle.clips[0].mp4.is_file());
         assert!(
             clip_seconds(&bundle.clips[0].mp4).is_none_or(|seconds| seconds >= MIN_CLIP_SECONDS),
             "the clip is shorter than the walkthrough"
         );
         assert!(!out.join(".recording-frames").exists());
+        let _ = fs::remove_dir_all(&out);
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn the_page_gives_a_tree_only_as_much_as_the_plan_asks() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let (url, stop) = serve_example();
+        let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-ui-tree-modes"));
+        let checkpoint = || {
+            vec![Step::Checkpoint {
+                id: "home".to_owned(),
+            }]
+        };
+        let tree = |mode| {
+            let mut plan = plan(&url, checkpoint());
+            plan.environment.ui_tree = mode;
+            let _ = fs::remove_dir_all(&out);
+            let backend = &backend;
+            let out = &out;
+            async move {
+                run_plan(backend, &plan, out)
+                    .await
+                    .unwrap()
+                    .checkpoints
+                    .remove(0)
+                    .snapshot
+            }
+        };
+        assert_eq!(tree(UiTreeMode::Off).await, None);
+        let full = tree(UiTreeMode::Full).await.unwrap();
+        assert!(full.find_by_id("counter").unwrap().label.is_some());
+        assert!(full.title.is_some());
+        let structure = tree(UiTreeMode::Structure).await.unwrap();
+        stop.store(true, Ordering::Relaxed);
+        let counter = structure.find_by_id("counter").unwrap();
+        assert_eq!(counter.label, None, "structure keeps no text");
+        assert!(counter.bounds.is_valid(), "but it keeps the layout");
+        assert!(
+            (structure.scale_factor - 1.0).abs() < f64::EPSILON,
+            "a default scale is one pixel per logical unit"
+        );
         let _ = fs::remove_dir_all(&out);
     }
 

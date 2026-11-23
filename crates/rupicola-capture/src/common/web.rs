@@ -17,7 +17,7 @@ pub(crate) mod flavour {
     use crate::common::rt::{Child, Runtime};
     use crate::common::traits::flavour::{CaptureBackend, CaptureSession};
     use crate::session::{
-        Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target,
+        Capabilities, Capability, CaptureError, Checkpoint, Clip, Environment, Target, UiTreeMode,
         WaitCondition,
     };
     use rupicola_protocol::UiAction;
@@ -93,6 +93,7 @@ pub(crate) mod flavour {
             let mut session = WebSession {
                 child,
                 artifacts: Artifacts::new(out),
+                tree: environment.ui_tree != UiTreeMode::Off,
             };
             session
                 .call(&DriverRequest::launch(self, target, environment))
@@ -105,6 +106,8 @@ pub(crate) mod flavour {
     struct WebSession {
         child: Child,
         artifacts: Artifacts,
+        /// Whether the plan wants the DOM tree with each screenshot.
+        tree: bool,
     }
 
     impl WebSession {
@@ -162,11 +165,16 @@ pub(crate) mod flavour {
 
         async fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
             let png = self.artifacts.png(id)?;
-            let reply = self.call(&DriverRequest::Screenshot { path: &png }).await?;
+            let mut reply = self
+                .call(&DriverRequest::Screenshot {
+                    path: &png,
+                    tree: self.tree,
+                })
+                .await?;
             Ok(Checkpoint {
                 id: id.to_owned(),
                 png,
-                snapshot: reply.snapshot,
+                snapshot: reply.tree(),
             })
         }
 

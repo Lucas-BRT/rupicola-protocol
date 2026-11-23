@@ -71,6 +71,33 @@ pub enum ColorScheme {
     Dark,
 }
 
+/// Whether a checkpoint keeps the UI tree of what it shows.
+///
+/// A tree lists the text on screen, which can be personal, so it is off unless a plan asks.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiTreeMode {
+    /// No tree, and a backend does not collect one.
+    #[default]
+    Off,
+    /// The layout: kinds, bounds and states, with no titles, labels or values.
+    Structure,
+    /// The whole tree, with its text.
+    Full,
+}
+
+impl UiTreeMode {
+    /// What a checkpoint keeps of `snapshot` under this mode.
+    #[must_use]
+    pub fn apply(self, snapshot: Option<UiSnapshot>) -> Option<UiSnapshot> {
+        match self {
+            Self::Off => None,
+            Self::Structure => snapshot.map(|tree| tree.without_text()),
+            Self::Full => snapshot,
+        }
+    }
+}
+
 /// How the target is shown.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Environment {
@@ -93,6 +120,9 @@ pub struct Environment {
     /// Milliseconds between the frames of a recording; the backend's own rate when unset.
     #[serde(default)]
     pub frame_interval_ms: Option<u64>,
+    /// Whether checkpoints keep the UI tree, and how much of it.
+    #[serde(default)]
+    pub ui_tree: UiTreeMode,
 }
 
 impl Environment {
@@ -108,6 +138,7 @@ impl Environment {
             locale: None,
             timeout_ms: None,
             frame_interval_ms: None,
+            ui_tree: UiTreeMode::Off,
         }
     }
 }
