@@ -1,7 +1,10 @@
 //! The Android backend as a session, on a real device when one is attached.
 //!
-//! The checks are about structure and never about what the screen says, and the screenshot
-//! goes to a temporary directory that is removed, so nothing from the device is kept.
+//! The checks are about structure and never about what the screen says. The screenshot goes to
+//! a temporary directory that is removed, unless `RUPICOLA_KEEP_CAPTURES` names a directory to
+//! keep it in, to be looked at.
+
+mod support;
 
 #[maybe_async_cfg::maybe(
     idents(flavour(sync = "sync", async = "asynchronous")),
@@ -63,8 +66,7 @@ mod flavour {
 
     /// The tree and the size of the screenshot taken with it.
     async fn capture(mode: UiTreeMode) -> (Option<UiSnapshot>, [u32; 2]) {
-        let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-android-{mode:?}"));
-        let _ = fs::remove_dir_all(&out);
+        let out = crate::support::out_dir(&format!("android-{TAG}-{mode:?}").to_lowercase());
         let backend = AndroidAdbBackend::default();
         let mut bundle = run_plan(&backend, &plan(mode), &out).await.unwrap();
         let checkpoint = bundle.checkpoints.remove(0);
@@ -73,7 +75,8 @@ mod flavour {
             u32::from_be_bytes(header[16..20].try_into().unwrap()),
             u32::from_be_bytes(header[20..24].try_into().unwrap()),
         ];
-        let _ = fs::remove_dir_all(&out);
+        crate::support::keep_json(&out, "tree.json", &checkpoint.snapshot);
+        crate::support::finish(&out);
         (checkpoint.snapshot, size)
     }
 

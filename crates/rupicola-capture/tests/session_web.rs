@@ -1,5 +1,7 @@
 //! The web backend as a session, in both flavours.
 
+mod support;
+
 #[maybe_async_cfg::maybe(
     idents(flavour(sync = "sync", async = "asynchronous")),
     sync(feature = "sync", drop_attrs(async_test)),
@@ -115,8 +117,7 @@ mod flavour {
             return;
         };
         let (url, stop) = serve_example();
-        let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-session-web"));
-        let _ = fs::remove_dir_all(&out);
+        let out = crate::support::out_dir(&format!("web-{TAG}-session"));
         let steps = vec![
             Step::Checkpoint {
                 id: "before".to_owned(),
@@ -177,7 +178,8 @@ mod flavour {
             "the clip is shorter than the walkthrough"
         );
         assert!(!out.join(".recording-frames").exists());
-        let _ = fs::remove_dir_all(&out);
+        crate::support::keep_json(&out, "tree-after.json", &bundle.checkpoints[1].snapshot);
+        crate::support::finish(&out);
     }
 
     #[sync_test]
@@ -188,7 +190,7 @@ mod flavour {
             return;
         };
         let (url, stop) = serve_example();
-        let out = std::env::temp_dir().join(format!("rupicola-capture-{TAG}-ui-tree-modes"));
+        let out = crate::support::out_dir(&format!("web-{TAG}-ui-tree-modes"));
         let checkpoint = || {
             vec![Step::Checkpoint {
                 id: "home".to_owned(),
@@ -197,16 +199,19 @@ mod flavour {
         let tree = |mode| {
             let mut plan = plan(&url, checkpoint());
             plan.environment.ui_tree = mode;
-            let _ = fs::remove_dir_all(&out);
+            // One folder per mode, so keeping the captures keeps all three.
+            let dir = out.join(format!("{mode:?}").to_lowercase());
+            let _ = fs::remove_dir_all(&dir);
             let backend = &backend;
-            let out = &out;
             async move {
-                run_plan(backend, &plan, out)
+                let snapshot = run_plan(backend, &plan, &dir)
                     .await
                     .unwrap()
                     .checkpoints
                     .remove(0)
-                    .snapshot
+                    .snapshot;
+                crate::support::keep_json(&dir, "tree.json", &snapshot);
+                snapshot
             }
         };
         assert_eq!(tree(UiTreeMode::Off).await, None);
@@ -222,7 +227,7 @@ mod flavour {
             (structure.scale_factor - 1.0).abs() < f64::EPSILON,
             "a default scale is one pixel per logical unit"
         );
-        let _ = fs::remove_dir_all(&out);
+        crate::support::finish(&out);
     }
 
     #[sync_test]
