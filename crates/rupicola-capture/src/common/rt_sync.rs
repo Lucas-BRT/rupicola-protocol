@@ -3,7 +3,7 @@
 
 use crate::backend::tool::Tool;
 use crate::session::CaptureError;
-use std::io::{self, Write as _};
+use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
@@ -15,6 +15,7 @@ use std::time::Duration;
 pub(crate) struct Child {
     inner: std::process::Child,
     stdin: Option<std::process::ChildStdin>,
+    stdout: Option<BufReader<std::process::ChildStdout>>,
 }
 
 impl Child {
@@ -26,6 +27,11 @@ impl Child {
 
     pub(crate) fn wait(&mut self) -> io::Result<ExitStatus> {
         self.inner.wait()
+    }
+
+    /// Whether both stdin and stdout are piped.
+    pub(crate) const fn has_pipes(&self) -> bool {
+        self.stdin.is_some() && self.stdout.is_some()
     }
 
     /// Writes `data` to the process's stdin and flushes it.
@@ -41,6 +47,16 @@ impl Child {
     /// Closes the process's stdin.
     pub(crate) fn close_stdin(&mut self) {
         self.stdin = None;
+    }
+
+    /// Reads one line from the process's stdout; `None` at the end of the stream.
+    pub(crate) fn read_line(&mut self) -> io::Result<Option<String>> {
+        let stdout = self
+            .stdout
+            .as_mut()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
+        let mut line = String::new();
+        Ok((stdout.read_line(&mut line)? > 0).then_some(line))
     }
 }
 
@@ -58,6 +74,7 @@ impl Runtime {
         let mut inner = command.spawn()?;
         Ok(Child {
             stdin: inner.stdin.take(),
+            stdout: inner.stdout.take().map(BufReader::new),
             inner,
         })
     }
@@ -113,6 +130,10 @@ impl Runtime {
 
     pub(crate) fn exists(path: &Path) -> bool {
         path.exists()
+    }
+
+    pub(crate) fn is_file(path: &Path) -> bool {
+        path.is_file()
     }
 
     /// The names of the entries of `dir`; empty when it cannot be read.

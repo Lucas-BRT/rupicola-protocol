@@ -8,13 +8,14 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::time::Duration;
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
 /// A process started for a session, with the pipes its command asked for. It is killed
 /// when dropped.
 pub(crate) struct Child {
     inner: tokio::process::Child,
     stdin: Option<tokio::process::ChildStdin>,
+    stdout: Option<BufReader<tokio::process::ChildStdout>>,
 }
 
 impl Child {
@@ -25,6 +26,11 @@ impl Child {
 
     pub(crate) async fn wait(&mut self) -> io::Result<ExitStatus> {
         self.inner.wait().await
+    }
+
+    /// Whether both stdin and stdout are piped.
+    pub(crate) const fn has_pipes(&self) -> bool {
+        self.stdin.is_some() && self.stdout.is_some()
     }
 
     /// Writes `data` to the process's stdin and flushes it.
@@ -40,6 +46,16 @@ impl Child {
     /// Closes the process's stdin.
     pub(crate) fn close_stdin(&mut self) {
         self.stdin = None;
+    }
+
+    /// Reads one line from the process's stdout; `None` at the end of the stream.
+    pub(crate) async fn read_line(&mut self) -> io::Result<Option<String>> {
+        let stdout = self
+            .stdout
+            .as_mut()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
+        let mut line = String::new();
+        Ok((stdout.read_line(&mut line).await? > 0).then_some(line))
     }
 }
 
@@ -58,6 +74,7 @@ impl Runtime {
         let mut inner = tokio_command(command).spawn()?;
         Ok(Child {
             stdin: inner.stdin.take(),
+            stdout: inner.stdout.take().map(BufReader::new),
             inner,
         })
     }
@@ -122,6 +139,12 @@ impl Runtime {
 
     pub(crate) async fn exists(path: &Path) -> bool {
         tokio::fs::try_exists(path).await.unwrap_or(false)
+    }
+
+    pub(crate) async fn is_file(path: &Path) -> bool {
+        tokio::fs::metadata(path)
+            .await
+            .is_ok_and(|metadata| metadata.is_file())
     }
 
     /// The names of the entries of `dir`; empty when it cannot be read.

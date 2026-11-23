@@ -17,5 +17,6 @@ pub(crate) mod rt_async;
 pub(crate) mod rt_sync;
 pub(crate) mod runner;
 pub(crate) mod traits;
+pub(crate) mod web;
 #[cfg(unix)]
 pub(crate) mod xvfb;
