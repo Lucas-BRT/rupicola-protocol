@@ -7,21 +7,17 @@
 //! with `kill_on_drop`, so a session that is dropped without `finish` still cleans up.
 
 pub mod annotate;
-mod cdp;
-#[cfg(unix)]
-mod gtk_broadway;
 #[cfg(test)]
 mod tests;
-mod tool;
 mod web;
 
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};
+pub use crate::common::cdp::asynchronous::CdpDiscovery;
 pub use crate::common::runner::asynchronous::run_plan;
 pub use crate::common::traits::asynchronous::{CaptureBackend, CaptureSession};
 pub use annotate::{annotate_png, annotate_video, mp4_to_gif};
-pub use cdp::CdpDiscovery;
 pub use web::WebDiscovery;
 
 /// A std command, ready to run on tokio and to be killed when dropped.

@@ -4,6 +4,7 @@
 use crate::backend::tool::Tool;
 use crate::session::CaptureError;
 use std::io;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::time::Duration;
@@ -89,6 +90,18 @@ impl Runtime {
         } else {
             Err(tool.missing())
         }
+    }
+
+    /// Whether something accepts connections at `address`, trying for `timeout_ms`.
+    pub(crate) async fn connects(address: SocketAddr, timeout_ms: u64) -> bool {
+        matches!(
+            tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                tokio::net::TcpStream::connect(address)
+            )
+            .await,
+            Ok(Ok(_))
+        )
     }
 
     pub(crate) async fn create_dir_all(path: &Path) -> io::Result<()> {

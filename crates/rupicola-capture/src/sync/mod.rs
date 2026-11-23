@@ -6,19 +6,15 @@
 //! honour unless the plan allows a degraded run.
 
 pub mod annotate;
-mod cdp;
-#[cfg(unix)]
-mod gtk_broadway;
 #[cfg(test)]
 mod tests;
-mod tool;
 mod web;
 
 pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 #[cfg(unix)]
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};
+pub use crate::common::cdp::sync::CdpDiscovery;
 pub use crate::common::runner::sync::run_plan;
 pub use crate::common::traits::sync::{CaptureBackend, CaptureSession};
 pub use annotate::{annotate_png, annotate_video, mp4_to_gif};
-pub use cdp::CdpDiscovery;
 pub use web::WebDiscovery;
