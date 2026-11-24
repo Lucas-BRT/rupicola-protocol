@@ -73,6 +73,7 @@ mod flavour {
                 },
                 Step::Checkpoint {
                     id: "shot".to_owned(),
+                    full_page: false,
                 },
                 Step::StopRecording {
                     id: "clip".to_owned(),

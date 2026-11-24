@@ -11,11 +11,22 @@ use std::collections::HashSet;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "step", rename_all = "kebab-case")]
 pub enum Step {
-    Action { action: UiAction },
-    Wait { condition: WaitCondition },
-    Checkpoint { id: String },
+    Action {
+        action: UiAction,
+    },
+    Wait {
+        condition: WaitCondition,
+    },
+    Checkpoint {
+        id: String,
+        /// Shoots the whole scrollable page instead of the viewport.
+        #[serde(default)]
+        full_page: bool,
+    },
     StartRecording,
-    StopRecording { id: String },
+    StopRecording {
+        id: String,
+    },
 }
 
 impl Step {
@@ -41,6 +52,9 @@ impl Step {
             Self::StartRecording | Self::StopRecording { .. } => {
                 Capabilities::of(&[Capability::Video])
             }
+            Self::Checkpoint {
+                full_page: true, ..
+            } => Capabilities::of(&[Capability::FullPage]),
             Self::Wait { .. } | Self::Checkpoint { .. } => Capabilities::of(&[]),
         }
     }
@@ -106,7 +120,7 @@ impl Plan {
         let mut recordings = HashSet::new();
         for step in &self.steps {
             let (id, ids) = match step {
-                Step::Checkpoint { id } => (id, &mut checkpoints),
+                Step::Checkpoint { id, .. } => (id, &mut checkpoints),
                 Step::StopRecording { id } => (id, &mut recordings),
                 _ => continue,
             };

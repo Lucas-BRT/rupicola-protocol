@@ -67,6 +67,7 @@ mod flavour {
             steps: vec![
                 Step::Checkpoint {
                     id: "before".to_owned(),
+                    full_page: false,
                 },
                 Step::StartRecording,
                 Step::Wait {
@@ -74,6 +75,7 @@ mod flavour {
                 },
                 Step::Checkpoint {
                     id: "after".to_owned(),
+                    full_page: false,
                 },
                 Step::StopRecording {
                     id: "walk".to_owned(),
@@ -137,6 +139,7 @@ mod flavour {
             environment: Environment::new(VIEWPORT),
             steps: vec![Step::Checkpoint {
                 id: "../escape".to_owned(),
+                full_page: false,
             }],
             allow_degraded: false,
         };

@@ -78,6 +78,7 @@ mod flavour {
         let steps = vec![
             Step::Checkpoint {
                 id: "before".to_owned(),
+                full_page: false,
             },
             Step::StartRecording,
             Step::Action {
@@ -101,6 +102,7 @@ mod flavour {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
             Step::StopRecording {
                 id: "walk".to_owned(),
@@ -151,6 +153,7 @@ mod flavour {
         let checkpoint = || {
             vec![Step::Checkpoint {
                 id: "home".to_owned(),
+                full_page: false,
             }]
         };
         let tree = |mode| {
@@ -247,6 +250,7 @@ mod flavour {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
         ];
         let mut plan = plan(&url, steps);
@@ -255,5 +259,150 @@ mod flavour {
         stop.store(true, Ordering::Relaxed);
         assert!(bundle.checkpoints[0].png.is_file());
         let _ = fs::remove_dir_all(&out);
+    }
+
+    /// A page three screens tall, with an element near its end.
+    const TALL_PAGE: &str = "data:text/html,<body style='margin:0;height:2160px;\
+        background:linear-gradient(red,blue)'><div id='deep' style='position:absolute;\
+        top:1800px;height:100px;width:100%;background:white'></div></body>";
+    const TALL_PAGE_HEIGHT: u32 = 2160;
+    const PNG_HEIGHT_OFFSET: usize = 20;
+    const PNG_FIELD_BYTES: usize = 4;
+    const DEEP_ID: &str = "deep";
+    /// A pause longer than any scroll of the tall page needs.
+    const LONG_PAUSE_MS: u64 = 600;
+
+    fn checkpoint(id: &str, full_page: bool) -> Step {
+        Step::Checkpoint {
+            id: id.to_owned(),
+            full_page,
+        }
+    }
+
+    fn act(action: UiAction) -> Step {
+        Step::Action { action }
+    }
+
+    fn press(key: &str) -> Step {
+        act(UiAction::PressKey {
+            key: key.to_owned(),
+            modifiers: Vec::new(),
+        })
+    }
+
+    /// Height in pixels of a PNG, read from its header.
+    fn png_height(path: &std::path::Path) -> u32 {
+        let bytes = fs::read(path).unwrap();
+        let field = &bytes[PNG_HEIGHT_OFFSET..PNG_HEIGHT_OFFSET + PNG_FIELD_BYTES];
+        u32::from_be_bytes(field.try_into().unwrap())
+    }
+
+    /// The bytes of each checkpoint a plan on the tall page takes, in order.
+    async fn shoot_tall_page(
+        backend: &WebBackend,
+        name: &str,
+        steps: Vec<Step>,
+    ) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        let out = crate::support::out_dir(&format!("web-{TAG}-{name}"));
+        let mut plan = plan(TALL_PAGE, steps);
+        plan.environment.reduced_motion = true;
+        let bundle = run_plan(backend, &plan, &out).await.unwrap();
+        bundle
+            .checkpoints
+            .into_iter()
+            .map(|c| {
+                let bytes = fs::read(&c.png).unwrap();
+                (c.png, bytes)
+            })
+            .collect()
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_checkpoint_right_after_a_scroll_key_shows_the_scrolled_page() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "settle",
+            vec![
+                checkpoint("top", false),
+                press("End"),
+                checkpoint("bottom", false),
+                // Nothing is left to scroll, so a long pause cannot change what is shown.
+                Step::Wait {
+                    condition: WaitCondition::Delay { ms: LONG_PAUSE_MS },
+                },
+                checkpoint("bottom-later", false),
+            ],
+        )
+        .await;
+        assert_ne!(shots[0].1, shots[1].1, "End had not scrolled yet");
+        assert_eq!(shots[1].1, shots[2].1, "the page was still moving");
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_full_page_checkpoint_is_as_tall_as_the_page() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "full-page",
+            vec![checkpoint("view", false), checkpoint("page", true)],
+        )
+        .await;
+        assert_eq!(png_height(&shots[0].0), VIEWPORT[1]);
+        assert_eq!(png_height(&shots[1].0), TALL_PAGE_HEIGHT);
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn scroll_actions_reach_an_element_a_position_and_the_end() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "scroll-actions",
+            vec![
+                checkpoint("top", false),
+                act(UiAction::ScrollIntoView {
+                    target_id: DEEP_ID.to_owned(),
+                }),
+                checkpoint("deep", false),
+                act(UiAction::ScrollTo {
+                    target_id: None,
+                    x: 0.0,
+                    y: 0.0,
+                }),
+                checkpoint("top-again", false),
+                act(UiAction::ScrollToEnd { target_id: None }),
+                checkpoint("end", false),
+                act(UiAction::ScrollTo {
+                    target_id: None,
+                    x: 0.0,
+                    y: 0.0,
+                }),
+                press("End"),
+                checkpoint("end-by-key", false),
+            ],
+        )
+        .await;
+        assert_ne!(shots[0].1, shots[1].1, "the element was not scrolled to");
+        assert_eq!(
+            shots[0].1, shots[2].1,
+            "scroll-to did not return to the top"
+        );
+        assert_ne!(shots[0].1, shots[3].1, "scroll-to-end did not move");
+        assert_eq!(
+            shots[3].1, shots[4].1,
+            "scroll-to-end did not reach the key's end"
+        );
     }
 }

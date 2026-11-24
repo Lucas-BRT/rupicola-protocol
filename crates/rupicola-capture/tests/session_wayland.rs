@@ -79,6 +79,7 @@ mod flavour {
             steps: vec![
                 Step::Checkpoint {
                     id: "closed".to_owned(),
+                    full_page: false,
                 },
                 Step::StartRecording,
                 Step::Action {
@@ -92,6 +93,7 @@ mod flavour {
                 },
                 Step::Checkpoint {
                     id: "open".to_owned(),
+                    full_page: false,
                 },
                 Step::StopRecording {
                     id: "walk".to_owned(),

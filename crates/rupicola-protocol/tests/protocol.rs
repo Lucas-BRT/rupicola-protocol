@@ -82,6 +82,17 @@ fn all_ui_actions_and_error_responses_roundtrip_ndjson() {
             dx: 0.0,
             dy: 240.0,
         },
+        UiAction::ScrollIntoView {
+            target_id: "footer".into(),
+        },
+        UiAction::ScrollTo {
+            target_id: None,
+            x: 0.0,
+            y: 1200.0,
+        },
+        UiAction::ScrollToEnd {
+            target_id: Some("list".into()),
+        },
         UiAction::WaitMs { ms: 150 },
     ];
 

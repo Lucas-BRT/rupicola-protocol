@@ -94,6 +94,7 @@ pub(crate) mod flavour {
                 Capability::Video,
                 Capability::ColorScheme,
                 Capability::Scale,
+                Capability::FullPage,
             ]),
             detected_binaries: detected,
             missing_dependencies: missing,

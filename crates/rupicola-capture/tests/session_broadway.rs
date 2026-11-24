@@ -86,6 +86,7 @@ mod flavour {
             environment,
             steps: vec![Step::Checkpoint {
                 id: "notes".to_owned(),
+                full_page: false,
             }],
             allow_degraded: false,
         };

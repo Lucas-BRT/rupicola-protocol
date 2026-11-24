@@ -51,7 +51,10 @@ mod flavour {
     }
 
     fn checkpoint(id: &str) -> Step {
-        Step::Checkpoint { id: id.to_owned() }
+        Step::Checkpoint {
+            id: id.to_owned(),
+            full_page: false,
+        }
     }
 
     /// The width and height a PNG states.

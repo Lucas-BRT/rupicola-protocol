@@ -17,6 +17,8 @@ pub enum Capability {
     ColorScheme,
     /// Honours the environment's scale.
     Scale,
+    /// Takes checkpoints of a whole scrollable page, not just what the viewport shows.
+    FullPage,
 }
 
 impl Capability {
@@ -34,16 +36,18 @@ impl Capability {
             Self::Video => "video",
             Self::ColorScheme => "color-scheme",
             Self::Scale => "scale",
+            Self::FullPage => "full-page",
         }
     }
 
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Actions,
         Self::Pointer,
         Self::UiTree,
         Self::Video,
         Self::ColorScheme,
         Self::Scale,
+        Self::FullPage,
     ];
 }
 

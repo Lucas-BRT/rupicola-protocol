@@ -19,6 +19,7 @@ pub(crate) enum DriverRequest<'a> {
         color_scheme: Option<ColorScheme>,
         reduced_motion: bool,
         warmup_ms: u64,
+        settle_ms: Option<u64>,
         locale: Option<&'a str>,
         timeout_ms: Option<u64>,
         frame_interval_ms: Option<u64>,
@@ -34,6 +35,8 @@ pub(crate) enum DriverRequest<'a> {
         path: &'a Path,
         /// Whether to walk the page's DOM too; a plan that wants no tree never pays for it.
         tree: bool,
+        /// Whether to shoot the whole scrollable page instead of the viewport.
+        full_page: bool,
     },
     StartRecording {
         dir: &'a Path,
@@ -80,6 +83,7 @@ impl<'a> DriverRequest<'a> {
             color_scheme: environment.color_scheme,
             reduced_motion: environment.reduced_motion,
             warmup_ms: environment.warmup_ms,
+            settle_ms: environment.settle_ms,
             locale: environment.locale.as_deref(),
             timeout_ms: environment.timeout_ms,
             frame_interval_ms: environment.frame_interval_ms,

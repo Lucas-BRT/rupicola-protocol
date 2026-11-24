@@ -40,6 +40,7 @@ impl Walkthrough {
         });
         steps.push(Step::Checkpoint {
             id: PREVIEW_ID.to_owned(),
+            full_page: false,
         });
         steps.push(Step::StopRecording {
             id: WALKTHROUGH_ID.to_owned(),

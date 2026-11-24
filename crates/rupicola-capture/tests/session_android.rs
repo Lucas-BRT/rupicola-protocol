@@ -59,6 +59,7 @@ mod flavour {
             environment,
             steps: vec![Step::Checkpoint {
                 id: "screen".to_owned(),
+                full_page: false,
             }],
             allow_degraded: false,
         }
