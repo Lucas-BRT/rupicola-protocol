@@ -134,7 +134,8 @@ mod tests {
             file: PathBuf::from(RELATIVE_FRAME),
             ms: 0.0,
         }]);
-        let cwd = std::env::current_dir().unwrap();
-        assert!(list.contains(&format!("file '{}'", cwd.join(RELATIVE_FRAME).display())));
+        let expected =
+            std::path::absolute(std::env::current_dir().unwrap().join(RELATIVE_FRAME)).unwrap();
+        assert!(list.contains(&format!("file '{}'", expected.display())));
     }
 }

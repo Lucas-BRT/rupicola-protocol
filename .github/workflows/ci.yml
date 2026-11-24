@@ -55,4 +55,7 @@ jobs:
         with:
           shared-key: rupicola-protocol
       - uses: taiki-e/install-action@nextest
+      - name: Allow Chromium's sandbox (unprivileged user namespaces)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: cargo nextest run --locked --workspace
