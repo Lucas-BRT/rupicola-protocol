@@ -44,3 +44,89 @@ function cdpHasText(text) {
 function cdpLoaded() {
   return document.readyState === 'complete';
 }
+
+function cdpRequire(target) {
+  const el = cdpResolve(target);
+  if (!el) throw new Error("missing target: " + target);
+  return el;
+}
+
+function cdpCenter(target) {
+  const el = cdpRequire(target);
+  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) throw new Error("target has zero size: " + target);
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function cdpFocus(target, clearExisting) {
+  const el = cdpRequire(target);
+  el.focus();
+  if (clearExisting && "value" in el) {
+    el.value = "";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  return true;
+}
+
+function cdpScroll(target, dx, dy) {
+  const el = cdpRequire(target);
+  const scrolls = (node, size, client, overflow) =>
+    node[size] > node[client] && /(auto|scroll)/.test(getComputedStyle(node)[overflow]);
+  let box = el;
+  while (
+    box &&
+    box !== document.body &&
+    box !== document.documentElement &&
+    !(dy !== 0 && scrolls(box, "scrollHeight", "clientHeight", "overflowY")) &&
+    !(dx !== 0 && scrolls(box, "scrollWidth", "clientWidth", "overflowX"))
+  ) {
+    box = box.parentElement;
+  }
+  if (!box || box === document.body || box === document.documentElement) {
+    box = document.scrollingElement;
+  }
+  box.scrollBy(dx, dy);
+  return true;
+}
+
+function cdpScrollIntoView(target) {
+  const el = cdpRequire(target);
+  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  return true;
+}
+
+function cdpScrollTo(target, x, y) {
+  const el = target ? cdpRequire(target) : document.scrollingElement;
+  const box = el === document.documentElement ? document.scrollingElement : el;
+  box.scrollTo(x ?? box.scrollLeft, y ?? box.scrollHeight);
+  return true;
+}
+
+function cdpSettle(stableFrames, limitMs) {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    let scrolled = false;
+    let last = [window.scrollX, window.scrollY];
+    let still = 0;
+    const onScroll = () => { scrolled = true; };
+    addEventListener("scroll", onScroll, true);
+    const tick = () => {
+      const now = [window.scrollX, window.scrollY];
+      if (scrolled || now[0] !== last[0] || now[1] !== last[1]) {
+        still = 0;
+        last = now;
+        scrolled = false;
+      } else {
+        still += 1;
+      }
+      if (still >= stableFrames || performance.now() - started > limitMs) {
+        removeEventListener("scroll", onScroll, true);
+        resolve(true);
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+}

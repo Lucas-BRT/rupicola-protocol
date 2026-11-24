@@ -120,9 +120,11 @@ pub(crate) mod flavour {
         let (id, capabilities) = (
             "web-chromium-cdp",
             Capabilities::of(&[
+                Capability::Actions,
                 Capability::UiTree,
                 Capability::ColorScheme,
                 Capability::Scale,
+                Capability::FullPage,
             ]),
         );
         #[cfg(not(unix))]

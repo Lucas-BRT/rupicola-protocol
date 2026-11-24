@@ -49,6 +49,10 @@ pub(crate) mod flavour {
     /// Milliseconds between two looks at a page that is being waited for.
     #[cfg(unix)]
     const POLL_MS: u64 = 100;
+    #[cfg(unix)]
+    const SETTLE_STABLE_FRAMES: u32 = 3;
+    #[cfg(unix)]
+    const SETTLE_LIMIT_MS: u64 = 600;
     /// Milliseconds a step may take when the plan names no limit.
     #[cfg(unix)]
     const DEFAULT_TIMEOUT_MS: u64 = 10_000;
@@ -87,9 +91,11 @@ pub(crate) mod flavour {
 
         fn capabilities(&self) -> Capabilities {
             Capabilities::of(&[
+                Capability::Actions,
                 Capability::UiTree,
                 Capability::ColorScheme,
                 Capability::Scale,
+                Capability::FullPage,
             ])
         }
 
@@ -125,6 +131,7 @@ pub(crate) mod flavour {
                 profile,
                 tree: environment.ui_tree != UiTreeMode::Off,
                 timeout_ms: environment.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+                settle_ms: environment.settle_ms.unwrap_or(0),
                 network_policy: environment.network_policy,
             };
             if let Err(error) = session.open(&target.command, environment).await {
@@ -148,6 +155,7 @@ pub(crate) mod flavour {
         /// Whether the plan wants the page's tree with each screenshot.
         tree: bool,
         timeout_ms: u64,
+        settle_ms: u64,
         network_policy: NetworkPolicy,
     }
 
@@ -243,13 +251,21 @@ pub(crate) mod flavour {
             }
         }
 
-        /// Runs `expression` in the page and returns its value.
-        async fn evaluate(&mut self, expression: &str) -> Result<Value, CaptureError> {
+        /// Runs `expression` in the page and returns its value, optionally awaiting promises.
+        async fn evaluate_raw(
+            &mut self,
+            expression: &str,
+            await_promise: bool,
+        ) -> Result<Value, CaptureError> {
             let result = self
                 .request(
                     true,
                     "Runtime.evaluate",
-                    json!({ "expression": expression, "returnByValue": true }),
+                    json!({
+                        "expression": expression,
+                        "returnByValue": true,
+                        "awaitPromise": await_promise
+                    }),
                 )
                 .await?;
             if let Some(exception) = result.get("exceptionDetails") {
@@ -266,6 +282,121 @@ pub(crate) mod flavour {
                 .pointer("/result/value")
                 .cloned()
                 .unwrap_or(Value::Null))
+        }
+
+        /// Runs `expression` in the page and returns its value.
+        async fn evaluate(&mut self, expression: &str) -> Result<Value, CaptureError> {
+            self.evaluate_raw(expression, false).await
+        }
+
+        async fn helper(&mut self, call: &str) -> Result<Value, CaptureError> {
+            self.evaluate(&format!("{PAGE_HELPERS_JS}\n{call}")).await
+        }
+
+        async fn settle(&mut self) -> Result<(), CaptureError> {
+            let expr =
+                format!("{PAGE_HELPERS_JS}\ncdpSettle({SETTLE_STABLE_FRAMES}, {SETTLE_LIMIT_MS})");
+            self.evaluate_raw(&expr, true).await?;
+            if self.settle_ms > 0 {
+                Runtime::sleep(self.settle_ms).await;
+            }
+            Ok(())
+        }
+
+        async fn target_center(&mut self, target_id: &str) -> Result<(f64, f64), CaptureError> {
+            let arg = serde_json::to_string(target_id)
+                .map_err(|e| CaptureError::environment(e.to_string()))?;
+            let val = self.helper(&format!("cdpCenter({arg})")).await?;
+            let x = val.get("x").and_then(Value::as_f64);
+            let y = val.get("y").and_then(Value::as_f64);
+            match (x, y) {
+                (Some(x), Some(y)) => Ok((x, y)),
+                _ => Err(CaptureError::target(format!(
+                    "missing coordinates for {target_id}"
+                ))),
+            }
+        }
+
+        async fn mouse_click(&mut self, x: f64, y: f64) -> Result<(), CaptureError> {
+            self.request(
+                true,
+                "Input.dispatchMouseEvent",
+                json!({ "type": "mouseMoved", "x": x, "y": y }),
+            )
+            .await?;
+            self.request(
+                true,
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": "mousePressed",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "buttons": 1,
+                    "clickCount": 1
+                }),
+            )
+            .await?;
+            self.request(
+                true,
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": "mouseReleased",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 1
+                }),
+            )
+            .await?;
+            Ok(())
+        }
+
+        fn modifier_mask(modifiers: &[String]) -> u32 {
+            let mut mask = 0_u32;
+            for m in modifiers {
+                match m.to_ascii_lowercase().as_str() {
+                    "alt" => mask |= 1,
+                    "control" | "ctrl" => mask |= 2,
+                    "meta" | "command" | "cmd" => mask |= 4,
+                    "shift" => mask |= 8,
+                    _ => {}
+                }
+            }
+            mask
+        }
+
+        async fn save_screenshot(
+            &mut self,
+            id: &str,
+            full_page: bool,
+        ) -> Result<Checkpoint, CaptureError> {
+            let png = self.artifacts.png(id)?;
+            let params = if full_page {
+                json!({ "format": "png", "captureBeyondViewport": true })
+            } else {
+                json!({ "format": "png" })
+            };
+            let shot = self.request(true, "Page.captureScreenshot", params).await?;
+            let data = shot
+                .get("data")
+                .and_then(Value::as_str)
+                .and_then(crate::backend::base64::decode)
+                .filter(|bytes| !bytes.is_empty())
+                .ok_or_else(|| CaptureError::target("the browser sent no screenshot"))?;
+            Runtime::write(&png, &data)
+                .await
+                .map_err(|e| CaptureError::environment(format!("write {}: {e}", png.display())))?;
+            let snapshot = if self.tree {
+                Some(self.page_tree().await?)
+            } else {
+                None
+            };
+            Ok(Checkpoint {
+                id: id.to_owned(),
+                png,
+                snapshot,
+            })
         }
 
         /// Looks at the page until `condition`, a script that answers true, holds.
@@ -360,6 +491,14 @@ pub(crate) mod flavour {
                 return Err(CaptureError::target(format!("{url} did not load: {why}")));
             }
             self.until("cdpLoaded()", "the page to load").await?;
+            let _ = self.request(true, "Page.bringToFront", json!({})).await;
+            let _ = self
+                .request(
+                    true,
+                    "Emulation.setFocusEmulationEnabled",
+                    json!({ "enabled": true }),
+                )
+                .await;
             Runtime::sleep(environment.warmup_ms).await;
             Ok(())
         }
@@ -396,10 +535,99 @@ pub(crate) mod flavour {
             match action {
                 UiAction::WaitMs { ms } => {
                     Runtime::sleep(*ms).await;
-                    Ok(())
+                    return Ok(());
                 }
-                _ => Err(Self::unsupported()),
+                UiAction::Click { target_id } => {
+                    let (x, y) = self.target_center(target_id).await?;
+                    self.mouse_click(x, y).await?;
+                }
+                UiAction::ClickAt { x, y } => {
+                    self.mouse_click(*x, *y).await?;
+                }
+                UiAction::Hover { target_id } => {
+                    let (x, y) = self.target_center(target_id).await?;
+                    self.request(
+                        true,
+                        "Input.dispatchMouseEvent",
+                        json!({ "type": "mouseMoved", "x": x, "y": y }),
+                    )
+                    .await?;
+                }
+                UiAction::Focus { target_id } => {
+                    let arg = serde_json::to_string(target_id)
+                        .map_err(|e| CaptureError::environment(e.to_string()))?;
+                    self.helper(&format!("cdpFocus({arg}, false)")).await?;
+                }
+                UiAction::TypeText { target_id, text } => {
+                    let arg = serde_json::to_string(target_id)
+                        .map_err(|e| CaptureError::environment(e.to_string()))?;
+                    self.helper(&format!("cdpFocus({arg}, true)")).await?;
+                    self.request(true, "Input.insertText", json!({ "text": text }))
+                        .await?;
+                }
+                UiAction::PressKey { key, modifiers } => {
+                    let mods = Self::modifier_mask(modifiers);
+                    self.request(
+                        true,
+                        "Input.dispatchKeyEvent",
+                        json!({ "type": "keyDown", "key": key, "modifiers": mods }),
+                    )
+                    .await?;
+                    self.request(
+                        true,
+                        "Input.dispatchKeyEvent",
+                        json!({ "type": "keyUp", "key": key, "modifiers": mods }),
+                    )
+                    .await?;
+                }
+                UiAction::Scroll { target_id, dx, dy } => {
+                    if let Some(target_id) = target_id {
+                        let arg = serde_json::to_string(target_id)
+                            .map_err(|e| CaptureError::environment(e.to_string()))?;
+                        self.helper(&format!("cdpScroll({arg}, {dx}, {dy})"))
+                            .await?;
+                    } else {
+                        self.request(
+                            true,
+                            "Input.dispatchMouseEvent",
+                            json!({
+                                "type": "mouseWheel",
+                                "x": 1.0,
+                                "y": 1.0,
+                                "deltaX": dx,
+                                "deltaY": dy
+                            }),
+                        )
+                        .await?;
+                    }
+                }
+                UiAction::ScrollIntoView { target_id } => {
+                    let arg = serde_json::to_string(target_id)
+                        .map_err(|e| CaptureError::environment(e.to_string()))?;
+                    self.helper(&format!("cdpScrollIntoView({arg})")).await?;
+                }
+                UiAction::ScrollTo { target_id, x, y } => {
+                    let arg = target_id
+                        .as_deref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| CaptureError::environment(e.to_string()))?
+                        .unwrap_or_else(|| "null".to_owned());
+                    self.helper(&format!("cdpScrollTo({arg}, {x}, {y})"))
+                        .await?;
+                }
+                UiAction::ScrollToEnd { target_id } => {
+                    let arg = target_id
+                        .as_deref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| CaptureError::environment(e.to_string()))?
+                        .unwrap_or_else(|| "null".to_owned());
+                    self.helper(&format!("cdpScrollTo({arg}, null, null)"))
+                        .await?;
+                }
             }
+            self.settle().await
         }
 
         async fn wait_for(&mut self, condition: &WaitCondition) -> Result<(), CaptureError> {
@@ -430,29 +658,11 @@ pub(crate) mod flavour {
         }
 
         async fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
-            let png = self.artifacts.png(id)?;
-            let shot = self
-                .request(true, "Page.captureScreenshot", json!({ "format": "png" }))
-                .await?;
-            let data = shot
-                .get("data")
-                .and_then(Value::as_str)
-                .and_then(crate::backend::base64::decode)
-                .filter(|bytes| !bytes.is_empty())
-                .ok_or_else(|| CaptureError::target("the browser sent no screenshot"))?;
-            Runtime::write(&png, &data)
-                .await
-                .map_err(|e| CaptureError::environment(format!("write {}: {e}", png.display())))?;
-            let snapshot = if self.tree {
-                Some(self.page_tree().await?)
-            } else {
-                None
-            };
-            Ok(Checkpoint {
-                id: id.to_owned(),
-                png,
-                snapshot,
-            })
+            self.save_screenshot(id, false).await
+        }
+
+        async fn screenshot_full_page(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
+            self.save_screenshot(id, true).await
         }
 
         async fn start_recording(&mut self) -> Result<(), CaptureError> {
