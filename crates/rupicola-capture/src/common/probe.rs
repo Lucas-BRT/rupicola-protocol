@@ -44,6 +44,19 @@ pub(crate) mod flavour {
     const BROADWAY_GUIDANCE: &str = "Install gtk4-broadwayd (GTK4) and configure Playwright (Node.js + RUPICOLA_PLAYWRIGHT_DIR).";
     const ADB_GUIDANCE: &str =
         "Install Android Platform Tools (`adb`) from https://developer.android.com/tools/adb.";
+    const FIREFOX_CANDIDATES: [&str; 3] = [
+        "firefox",
+        "firefox-esr",
+        "/Applications/Firefox.app/Contents/MacOS/firefox",
+    ];
+    const SAFARI_CANDIDATES: [&str; 2] = [
+        "safaridriver",
+        "/Applications/Safari.app/Contents/MacOS/Safari",
+    ];
+    const FIREFOX_DEP: &str = "firefox";
+    const SAFARI_DEP: &str = "safari | safaridriver";
+    const FIREFOX_GUIDANCE: &str = "Install Firefox via your OS package manager (e.g. `apt install firefox`, `brew install --cask firefox`) and configure Playwright (Node.js + RUPICOLA_PLAYWRIGHT_DIR) for `firefox` capture.";
+    const SAFARI_GUIDANCE: &str = "On macOS, enable Safari WebDriver (`safaridriver --enable`) and configure Playwright (Node.js + RUPICOLA_PLAYWRIGHT_DIR) for `webkit` capture.";
 
     async fn probe_playwright() -> (Option<PathBuf>, bool, BackendReport) {
         let mut detected = Vec::new();
@@ -249,13 +262,91 @@ pub(crate) mod flavour {
         }
     }
 
+    async fn resolve_candidate(candidate: &'static str) -> Option<PathBuf> {
+        if candidate.starts_with('/') {
+            let path = PathBuf::from(candidate);
+            Runtime::is_file(&path).await.then_some(path)
+        } else {
+            Runtime::resolve_tool(Tool(candidate)).await
+        }
+    }
+
+    async fn probe_web_engine(
+        id: &str,
+        label: &str,
+        candidates: &[&'static str],
+        browser_dep: &str,
+        guidance: &str,
+        node_found: Option<&PathBuf>,
+        module_found: bool,
+    ) -> BackendReport {
+        let mut detected = Vec::new();
+        for candidate in candidates {
+            if let Some(path) = resolve_candidate(candidate).await {
+                detected.push(path);
+            }
+        }
+        let has_os_browser = !detected.is_empty();
+        if let Some(node) = node_found {
+            detected.push(node.clone());
+        }
+        let mut missing = Vec::new();
+        if node_found.is_none() {
+            missing.push(NODE_TOOL.to_owned());
+        }
+        if !module_found {
+            missing.push(PLAYWRIGHT_DEP.to_owned());
+        }
+        let available = missing.is_empty();
+        if !available && !has_os_browser {
+            missing.push(browser_dep.to_owned());
+        }
+        BackendReport {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            kind: BackendKind::Web,
+            available,
+            capabilities: Capabilities::of(&[
+                Capability::Actions,
+                Capability::UiTree,
+                Capability::Video,
+                Capability::ColorScheme,
+                Capability::Scale,
+                Capability::FullPage,
+            ]),
+            detected_binaries: detected,
+            missing_dependencies: missing,
+            install_guidance: guidance.to_owned(),
+        }
+    }
+
     /// Probes the host OS for every supported capture backend, reporting detected binaries,
     /// missing dependencies, capabilities, and OS installation guidance.
     #[must_use]
     pub async fn probe_environment() -> Vec<BackendReport> {
         let (node_found, module_found, playwright) = probe_playwright().await;
         let cdp = probe_cdp().await;
-        let mut reports = vec![playwright, cdp];
+        let firefox = probe_web_engine(
+            "web-firefox",
+            "Firefox (Web)",
+            &FIREFOX_CANDIDATES,
+            FIREFOX_DEP,
+            FIREFOX_GUIDANCE,
+            node_found.as_ref(),
+            module_found,
+        )
+        .await;
+        let safari = probe_web_engine(
+            "web-safari",
+            "Safari / WebKit (Web)",
+            &SAFARI_CANDIDATES,
+            SAFARI_DEP,
+            SAFARI_GUIDANCE,
+            node_found.as_ref(),
+            module_found,
+        )
+        .await;
+        let mut reports = vec![playwright, cdp, firefox, safari];
 
         #[cfg(unix)]
         {

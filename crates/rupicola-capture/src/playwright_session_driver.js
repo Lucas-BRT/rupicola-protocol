@@ -88,10 +88,14 @@ async function isUrlAllowed(rawUrl) {
 }
 
 async function launch(request) {
+  const SUPPORTED_ENGINES = ['chromium', 'firefox', 'webkit'];
   try {
     pw = require(process.env.PW_DIR);
-    const launcher = pw[request.engine] || pw.chromium;
-    browser = await launcher.launch();
+    const engine = request.engine || 'chromium';
+    if (!SUPPORTED_ENGINES.includes(engine) || !pw[engine]) {
+      throw new Error(`unsupported browser engine: ${engine}`);
+    }
+    browser = await pw[engine].launch();
   } catch (error) {
     throw new DriverError('environment', `cannot start the browser: ${error.message}`);
   }
