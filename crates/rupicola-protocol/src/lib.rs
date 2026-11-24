@@ -19,7 +19,8 @@ pub use message::{ProtocolRequest, ProtocolResponse};
 pub use transport::{UnixProtocolClient, serve_once_unix};
 pub use transport::{read_ndjson, write_ndjson};
 pub use tree::{
-    SnapshotSource, ToolkitKind, UiSnapshot, WidgetBox, WidgetKind, WidgetNode, WidgetState,
+    ComputedStyle, SnapshotSource, ToolkitKind, UiSnapshot, WidgetBox, WidgetKind, WidgetNode,
+    WidgetState,
 };
 
 /// Current wire protocol version.

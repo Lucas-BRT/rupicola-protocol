@@ -56,6 +56,7 @@ mod flavour {
                     ..WidgetState::default()
                 },
                 style_hint: None,
+                style: None,
                 children: Vec::new(),
             },
         }

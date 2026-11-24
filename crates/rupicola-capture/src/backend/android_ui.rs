@@ -200,6 +200,7 @@ impl AndroidDump {
                     ..WidgetState::default()
                 },
                 style_hint: None,
+                style: None,
                 children: converted,
             }
         };
@@ -276,6 +277,7 @@ impl AndroidDump {
                 selected: Some(node.flag("selected")),
             },
             style_hint: None,
+            style: None,
             children: node
                 .children
                 .iter()

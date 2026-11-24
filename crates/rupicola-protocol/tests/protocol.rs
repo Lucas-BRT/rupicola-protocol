@@ -144,6 +144,7 @@ fn malformed_ndjson_line_returns_invalid_data_error() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
     let snap = UiSnapshot {
         protocol_version: PROTOCOL_VERSION,
@@ -172,6 +173,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                 ..WidgetState::default()
             },
             style_hint: None,
+            style: None,
             children: vec![
                 WidgetNode {
                     id: "panel".into(),
@@ -191,6 +193,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                         ..WidgetState::default()
                     },
                     style_hint: None,
+                    style: None,
                     children: vec![WidgetNode {
                         id: "deep-input".into(),
                         role: "textbox".into(),
@@ -210,6 +213,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                             ..WidgetState::default()
                         },
                         style_hint: None,
+                        style: None,
                         children: vec![],
                     }],
                 },
@@ -231,6 +235,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                         ..WidgetState::default()
                     },
                     style_hint: None,
+                    style: None,
                     children: vec![],
                 },
             ],
