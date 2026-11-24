@@ -1,26 +1,26 @@
-//! Session-based capture contract.
+//! What a capture is, whichever way it runs: the declarative [`Plan`], the [`Environment`]
+//! and [`Target`] it describes, and the [`Bundle`] of files it produces.
 //!
-//! A [`CaptureBackend`] starts a [`CaptureSession`] for a target once; the session then
-//! performs actions, waits, takes screenshots and records clips for as long as the plan
-//! needs, so the target launches once however many checkpoints are taken.
-//! [`run_plan`] drives a session from a declarative [`Plan`], refusing up front a plan the
-//! backend cannot honour unless the plan allows a degraded run.
+//! A backend starts a session for a target once; the session then performs actions,
+//! waits, takes screenshots and records clips for as long as the plan needs, so the target
+//! launches once however many checkpoints are taken. The traits that run a plan live in
+//! [`crate::sync`] (blocking).
 
-use rupicola_protocol::{UiAction, UiSnapshot};
+use rupicola_protocol::UiSnapshot;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod capabilities;
 mod error;
+mod network;
 mod plan;
-mod runner;
-#[cfg(test)]
-mod tests;
+mod probe;
 
 pub use capabilities::{Capabilities, Capability};
 pub use error::{CaptureError, ErrorClass};
-pub use plan::{Bundle, Plan, Step};
-pub use runner::run_plan;
+pub use network::NetworkPolicy;
+pub use plan::{Bundle, Plan, Preflight, Step};
+pub use probe::{BackendKind, BackendReport};
 
 /// Pixel ratio used when a plan does not set one.
 const DEFAULT_SCALE: f64 = 1.0;
@@ -75,6 +75,33 @@ pub enum ColorScheme {
     Dark,
 }
 
+/// Whether a checkpoint keeps the UI tree of what it shows.
+///
+/// A tree lists the text on screen, which can be personal, so it is off unless a plan asks.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiTreeMode {
+    /// No tree, and a backend does not collect one.
+    #[default]
+    Off,
+    /// The layout: kinds, bounds and states, with no titles, labels or values.
+    Structure,
+    /// The whole tree, with its text.
+    Full,
+}
+
+impl UiTreeMode {
+    /// What a checkpoint keeps of `snapshot` under this mode.
+    #[must_use]
+    pub fn apply(self, snapshot: Option<UiSnapshot>) -> Option<UiSnapshot> {
+        match self {
+            Self::Off => None,
+            Self::Structure => snapshot.map(|tree| tree.without_text()),
+            Self::Full => snapshot,
+        }
+    }
+}
+
 /// How the target is shown.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Environment {
@@ -87,6 +114,22 @@ pub struct Environment {
     pub reduced_motion: bool,
     #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
+    /// Locale of the target, such as `en-US`; backends that have none ignore it.
+    #[serde(default)]
+    pub locale: Option<String>,
+    /// Longest the target gets for one step, in milliseconds; the backend's own limit when
+    /// unset.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Milliseconds between the frames of a recording; the backend's own rate when unset.
+    #[serde(default)]
+    pub frame_interval_ms: Option<u64>,
+    /// Whether checkpoints keep the UI tree, and how much of it.
+    #[serde(default)]
+    pub ui_tree: UiTreeMode,
+    /// Network access policy enforced on web capture targets and subresources.
+    #[serde(default)]
+    pub network_policy: NetworkPolicy,
 }
 
 impl Environment {
@@ -99,6 +142,11 @@ impl Environment {
             color_scheme: None,
             reduced_motion: false,
             warmup_ms: DEFAULT_WARMUP_MS,
+            locale: None,
+            timeout_ms: None,
+            frame_interval_ms: None,
+            ui_tree: UiTreeMode::Off,
+            network_policy: NetworkPolicy::Unrestricted,
         }
     }
 }
@@ -128,60 +176,4 @@ pub struct Checkpoint {
 pub struct Clip {
     pub id: String,
     pub mp4: PathBuf,
-}
-
-/// A running capture of one target.
-pub trait CaptureSession {
-    /// # Errors
-    ///
-    /// Fails when the target does not accept the action.
-    fn perform(&mut self, action: &UiAction) -> Result<(), CaptureError>;
-
-    /// # Errors
-    ///
-    /// Fails when the condition is not met in time.
-    fn wait_for(&mut self, condition: &WaitCondition) -> Result<(), CaptureError>;
-
-    /// # Errors
-    ///
-    /// Fails when the frame cannot be grabbed.
-    fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError>;
-
-    /// # Errors
-    ///
-    /// Fails when recording cannot start.
-    fn start_recording(&mut self) -> Result<(), CaptureError>;
-
-    /// # Errors
-    ///
-    /// Fails when no recording is running or it cannot be finished.
-    fn stop_recording(&mut self, id: &str) -> Result<Clip, CaptureError>;
-
-    /// Stops the target and everything started for it. Called exactly once, even after
-    /// a failed step.
-    ///
-    /// # Errors
-    ///
-    /// Fails when cleanup does not complete.
-    fn finish(self: Box<Self>) -> Result<(), CaptureError>;
-}
-
-/// A way of capturing: knows what it can do and how to start a [`CaptureSession`].
-pub trait CaptureBackend {
-    fn id(&self) -> &'static str;
-
-    fn capabilities(&self) -> Capabilities;
-
-    /// Launches `target` in `environment`; files go under `out`.
-    ///
-    /// # Errors
-    ///
-    /// [`ErrorClass::Environment`] when tools are missing, [`ErrorClass::Target`] when
-    /// the target does not come up.
-    fn start(
-        &self,
-        target: &Target,
-        environment: &Environment,
-        out: &Path,
-    ) -> Result<Box<dyn CaptureSession>, CaptureError>;
 }

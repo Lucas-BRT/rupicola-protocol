@@ -2,15 +2,28 @@
 //! for `examples/apps/{crud-tasks,pomodoro-timer,unit-calculator,gtk4-notes}`
 //! using `rupicola-capture` directly.
 
+use crate::media::Walkthrough;
 use crate::support::serve_dir;
+use rupicola_capture::session::{Environment, Target};
 #[cfg(unix)]
-use rupicola_capture::LinuxX11Backend;
-use rupicola_capture::{CaptureBackend, CaptureRequest, WebBackend};
+use rupicola_capture::sync::LinuxX11Backend;
+use rupicola_capture::sync::{WebBackend, WebDiscovery as _};
 use rupicola_protocol::{AnnotationBox, AnnotationShape, AnnotationStyle, Rect, UiAction};
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::Ordering;
+
+const WEB_VIEWPORT: [u32; 2] = [1280, 720];
+const WEB_WARMUP_MS: u64 = 0;
+#[cfg(unix)]
+const GTK_VIEWPORT: [u32; 2] = [640, 480];
+#[cfg(unix)]
+const GTK_WARMUP_MS: u64 = 1200;
+#[cfg(unix)]
+const GTK_HOLD_MS: u64 = 1500;
+#[cfg(unix)]
+const GTK_DISPLAY: u16 = 93;
 
 fn ann(x: f64, y: f64, width: f64, height: f64, label: &str) -> AnnotationBox {
     AnnotationBox {
@@ -25,25 +38,6 @@ fn ann(x: f64, y: f64, width: f64, height: f64, label: &str) -> AnnotationBox {
         style: AnnotationStyle::default(),
         time_range: None,
         keyframes: vec![],
-    }
-}
-
-fn remove_intermediate_videos(output: rupicola_capture::CaptureOutput) {
-    assert!(
-        output.video_gif.is_some(),
-        "GIF conversion failed; retaining video"
-    );
-    if output.annotated_video_mp4.is_some() {
-        assert!(
-            output.annotated_video_gif.is_some(),
-            "annotated GIF conversion failed; retaining video"
-        );
-    }
-    for path in [output.video_mp4, output.annotated_video_mp4]
-        .into_iter()
-        .flatten()
-    {
-        std::fs::remove_file(path).expect("remove intermediate video");
     }
 }
 
@@ -63,20 +57,22 @@ fn capture_web_app(
     };
     let app_dir = root.join("examples/apps/medium").join(app).join("html");
     let (url, stop) = serve_dir(app_dir.clone());
-    let output = web
-        .capture(&CaptureRequest {
+    let mut environment = Environment::new(WEB_VIEWPORT);
+    environment.warmup_ms = WEB_WARMUP_MS;
+    let result = Walkthrough {
+        target: Target {
             command: url,
             args: vec![],
-            viewport: [1280, 720],
-            warmup_ms: 0,
-            actions,
-            record_video_ms: Some(record_video_ms),
-            annotations,
-            output_dir: app_dir.join("media"),
-        })
-        .unwrap_or_else(|e| panic!("capture {name}: {e}"));
-    remove_intermediate_videos(output);
+        },
+        environment,
+        actions,
+        hold_ms: record_video_ms,
+        annotations,
+        out: app_dir.join("media"),
+    }
+    .record(web);
     stop.store(true, Ordering::Relaxed);
+    result.unwrap_or_else(|e| panic!("capture {name}: {e}"));
 }
 
 fn capture_crud_tasks(web: &WebBackend, root: &Path) {
@@ -183,28 +179,31 @@ fn capture_gtk4_app(root: &Path) {
         .expect("build gtk4-notes");
     assert!(build.success(), "gtk4-notes build failed");
 
-    let x11 = LinuxX11Backend { display_num: 93 };
-    let output = x11
-        .capture(&CaptureRequest {
+    let mut environment = Environment::new(GTK_VIEWPORT);
+    environment.warmup_ms = GTK_WARMUP_MS;
+    Walkthrough {
+        target: Target {
             command: target_dir
                 .join("debug/gtk4-notes")
                 .to_string_lossy()
                 .into_owned(),
             args: vec![],
-            viewport: [640, 480],
-            warmup_ms: 1200,
-            actions: vec![],
-            record_video_ms: Some(1500),
-            annotations: vec![
-                ann(24.0, 66.0, 492.0, 38.0, "note-entry"),
-                ann(522.0, 66.0, 94.0, 38.0, "add-btn"),
-                ann(24.0, 114.0, 592.0, 294.0, "notes-list"),
-                ann(24.0, 418.0, 84.0, 38.0, "clear-btn"),
-            ],
-            output_dir: root.join("examples/apps/medium/notes/gtk4/media"),
-        })
-        .expect("capture gtk4-notes");
-    remove_intermediate_videos(output);
+        },
+        environment,
+        actions: vec![],
+        hold_ms: GTK_HOLD_MS,
+        annotations: vec![
+            ann(24.0, 66.0, 492.0, 38.0, "note-entry"),
+            ann(522.0, 66.0, 94.0, 38.0, "add-btn"),
+            ann(24.0, 114.0, 592.0, 294.0, "notes-list"),
+            ann(24.0, 418.0, 84.0, 38.0, "clear-btn"),
+        ],
+        out: root.join("examples/apps/medium/notes/gtk4/media"),
+    }
+    .record(&LinuxX11Backend {
+        display_num: GTK_DISPLAY,
+    })
+    .expect("capture gtk4-notes");
 }
 
 pub fn run() {

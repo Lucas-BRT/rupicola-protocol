@@ -11,7 +11,21 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# Pick how captures run; none is on by default, and both may be on.
+# `sync` blocks on its processes; `async` runs them on tokio.
+sync = []
+async = ["dep:async-trait", "dep:tokio"]
+
 [dependencies]
+maybe-async-cfg.workspace = true
+async-trait = { workspace = true, optional = true }
 rupicola-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, optional = true, features = ["fs", "io-util", "net", "process", "rt", "time"] }
+
+[dev-dependencies]
+# Turns a feature on for this crate's own tests.
+rupicola-capture = { path = ".", features = ["sync", "async"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

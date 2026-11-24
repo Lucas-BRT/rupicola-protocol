@@ -18,7 +18,9 @@ pub use message::{ProtocolRequest, ProtocolResponse};
 #[cfg(unix)]
 pub use transport::{UnixProtocolClient, serve_once_unix};
 pub use transport::{read_ndjson, write_ndjson};
-pub use tree::{ToolkitKind, UiSnapshot, WidgetBox, WidgetNode, WidgetState};
+pub use tree::{
+    SnapshotSource, ToolkitKind, UiSnapshot, WidgetBox, WidgetKind, WidgetNode, WidgetState,
+};
 
 /// Current wire protocol version.
 pub const PROTOCOL_VERSION: u32 = 1;

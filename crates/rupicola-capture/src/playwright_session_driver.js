@@ -2,6 +2,8 @@
 // per line on stdin and answers each with one JSON line on stdout:
 //   {"ok":true, ...}  or  {"ok":false,"class":"environment"|"target","error":"..."}
 const readline = require('readline');
+const dns = require('dns').promises;
+const net = require('net');
 
 /** Longest a wait condition may take, in milliseconds. */
 const WAIT_TIMEOUT_MS = 10000;
@@ -15,14 +17,68 @@ let browser = null;
 let context = null;
 let page = null;
 let recording = null;
+let waitTimeout = WAIT_TIMEOUT_MS;
+let frameInterval = FRAME_INTERVAL_MS;
 
+/** A target is a Playwright selector when it says so, and the id of an element otherwise. */
 const selector = (id) =>
-  id.startsWith('[') || id.startsWith('.') || id.startsWith('#') ? id : '#' + id;
+  /^(css|text|xpath|role|id)=|^\/\/|^[[.#]/.test(id) ? id : '#' + id;
 
 class DriverError extends Error {
   constructor(errorClass, message) {
     super(message);
     this.errorClass = errorClass;
+  }
+}
+
+function isForbiddenIpv4(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
+  const [a, b] = parts;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    a >= 224
+  );
+}
+
+function isForbiddenIp(rawIp) {
+  const ip = rawIp.toLowerCase();
+  if (net.isIPv4(ip)) return isForbiddenIpv4(ip);
+  if (!net.isIPv6(ip)) return true;
+  if (ip === '::1' || ip === '::' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('ff')) {
+    return true;
+  }
+  if (ip.startsWith('::ffff:')) {
+    const mapped = ip.slice('::ffff:'.length);
+    if (net.isIPv4(mapped)) return isForbiddenIpv4(mapped);
+  }
+  return false;
+}
+
+async function isUrlAllowed(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) return false;
+  if (net.isIP(host)) return !isForbiddenIp(host);
+  try {
+    const records = await dns.lookup(host, { all: true });
+    if (!records || records.length === 0) return false;
+    return records.every((record) => !isForbiddenIp(record.address));
+  } catch {
+    return false;
   }
 }
 
@@ -39,8 +95,23 @@ async function launch(request) {
     deviceScaleFactor: request.scale,
     colorScheme: request.color_scheme || 'no-preference',
     reducedMotion: request.reduced_motion ? 'reduce' : 'no-preference',
+    ...(request.locale ? { locale: request.locale } : {}),
   });
+  if (request.network_policy === 'public-only') {
+    await context.route('**/*', async (route) => {
+      if (await isUrlAllowed(route.request().url())) {
+        await route.continue();
+      } else {
+        await route.abort('blockedbyclient');
+      }
+    });
+  }
   page = await context.newPage();
+  if (request.timeout_ms) {
+    waitTimeout = request.timeout_ms;
+    page.setDefaultTimeout(request.timeout_ms);
+  }
+  if (request.frame_interval_ms) frameInterval = request.frame_interval_ms;
   try {
     await page.goto(request.url, { waitUntil: 'networkidle' });
   } catch (error) {
@@ -80,12 +151,12 @@ async function waitFor(condition) {
     case 'visible':
       return page.waitForSelector(selector(condition.target_id), {
         state: 'visible',
-        timeout: WAIT_TIMEOUT_MS,
+        timeout: waitTimeout,
       });
     case 'text':
       return page.getByText(condition.text).first().waitFor({
         state: 'visible',
-        timeout: WAIT_TIMEOUT_MS,
+        timeout: waitTimeout,
       });
     default:
       throw new Error(`unknown wait ${condition.wait}`);
@@ -93,45 +164,7 @@ async function waitFor(condition) {
 }
 
 function snapshot() {
-  return page.evaluate(() => {
-    function walk(el, idx) {
-      const r = el.getBoundingClientRect();
-      const s = getComputedStyle(el);
-      const visible =
-        s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
-      const children = [];
-      let i = 0;
-      for (const child of el.children) children.push(walk(child, i++));
-      return {
-        id: el.id || `${el.tagName.toLowerCase()}-${idx}`,
-        role: el.getAttribute('role') || el.tagName.toLowerCase(),
-        label: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 120) || null,
-        value: 'value' in el && typeof el.value === 'string' ? el.value : null,
-        bounds: { x: r.x, y: r.y, width: r.width, height: r.height },
-        state: {
-          visible,
-          enabled: !el.disabled,
-          focused: document.activeElement === el,
-          hovered: el.matches(':hover'),
-          pressed: el.getAttribute('aria-pressed') === 'true',
-          checked: 'checked' in el ? Boolean(el.checked) : null,
-          selected: null,
-        },
-        style_hint: el.className ? String(el.className) : null,
-        children,
-      };
-    }
-    return {
-      protocol_version: 1,
-      app_id: document.title || 'web-app',
-      toolkit: 'web-dom',
-      title: document.title || null,
-      viewport: [window.innerWidth, window.innerHeight],
-      scale_factor: window.devicePixelRatio || 1,
-      timestamp_ms: Date.now(),
-      root: walk(document.body, 0),
-    };
-  });
+  return page.evaluate(domSnapshot);
 }
 
 function startRecording(dir) {
@@ -144,7 +177,7 @@ function startRecording(dir) {
       const file = `${dir}/frame${String(index++).padStart(6, '0')}.jpg`;
       await page.screenshot({ path: file, type: 'jpeg', quality: FRAME_QUALITY });
       state.frames.push({ file, ms: started });
-      await page.waitForTimeout(Math.max(0, FRAME_INTERVAL_MS - (Date.now() - started)));
+      await page.waitForTimeout(Math.max(0, frameInterval - (Date.now() - started)));
     }
   })();
   recording = state;
@@ -169,7 +202,7 @@ async function handle(request) {
       return waitFor(request.condition);
     case 'screenshot':
       await page.screenshot({ path: request.path });
-      return { snapshot: await snapshot() };
+      return request.tree ? { snapshot: await snapshot() } : {};
     case 'start-recording':
       return startRecording(request.dir);
     case 'stop-recording':

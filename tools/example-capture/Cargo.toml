@@ -9,5 +9,5 @@ publish = false
 workspace = true
 
 [dependencies]
-rupicola-capture.workspace = true
+rupicola-capture = { workspace = true, features = ["sync"] }
 rupicola-protocol.workspace = true

@@ -1,6 +1,6 @@
 use rupicola_protocol::{
-    PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, ToolkitKind, UiAction, UiSnapshot,
-    WidgetNode, WidgetState, read_ndjson, write_ndjson,
+    PROTOCOL_VERSION, ProtocolRequest, ProtocolResponse, Rect, SnapshotSource, ToolkitKind,
+    UiAction, UiSnapshot, WidgetKind, WidgetNode, WidgetState, read_ndjson, write_ndjson,
 };
 use std::io::Cursor;
 
@@ -142,9 +142,11 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
         viewport: [800, 600],
         scale_factor: 1.0,
         timestamp_ms: 100,
+        source: SnapshotSource::Adapter,
         root: WidgetNode {
             id: "root".into(),
             role: "window".into(),
+            kind: WidgetKind::Window,
             label: None,
             value: None,
             bounds: Rect {
@@ -163,6 +165,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                 WidgetNode {
                     id: "panel".into(),
                     role: "container".into(),
+                    kind: WidgetKind::Group,
                     label: None,
                     value: None,
                     bounds: Rect {
@@ -180,6 +183,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                     children: vec![WidgetNode {
                         id: "deep-input".into(),
                         role: "textbox".into(),
+                        kind: WidgetKind::TextBox,
                         label: Some("Name".into()),
                         value: Some("Rupicola".into()),
                         bounds: Rect {
@@ -201,6 +205,7 @@ fn snapshot_flattens_visible_boxes_only_and_finds_nested_ids() {
                 WidgetNode {
                     id: "hidden-modal".into(),
                     role: "dialog".into(),
+                    kind: WidgetKind::Dialog,
                     label: Some("Hidden".into()),
                     value: None,
                     bounds: Rect {
