@@ -163,6 +163,7 @@ mod flavour {
         vec![
             Step::Checkpoint {
                 id: "before".to_owned(),
+                full_page: false,
             },
             Step::StartRecording,
             Step::Action {
@@ -172,6 +173,7 @@ mod flavour {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
             Step::StopRecording {
                 id: "walk".to_owned(),
@@ -275,6 +277,7 @@ mod flavour {
     fn one_checkpoint() -> Vec<Step> {
         vec![Step::Checkpoint {
             id: "home".to_owned(),
+            full_page: false,
         }]
     }
 
@@ -325,6 +328,28 @@ mod flavour {
             .unwrap();
         assert_eq!(bundle.checkpoints.len(), 1, "the screenshot is still taken");
         assert_eq!(bundle.warnings, ["backend fake lacks ui-tree; skipped"]);
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_full_page_checkpoint_a_backend_cannot_take_refuses_the_plan_or_is_skipped() {
+        let (backend, _) = fake(SCREENSHOT_ONLY, None);
+        let steps = || {
+            vec![Step::Checkpoint {
+                id: "page".to_owned(),
+                full_page: true,
+            }]
+        };
+        let error = run_plan(&backend, &plan(steps(), false), Path::new("out"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.class, ErrorClass::Environment);
+        assert!(error.message.contains("full-page"), "{}", error.message);
+        let bundle = run_plan(&backend, &plan(steps(), true), Path::new("out"))
+            .await
+            .unwrap();
+        assert_eq!(bundle.checkpoints.len(), 0);
+        assert_eq!(bundle.warnings, ["backend fake lacks full-page; skipped"]);
     }
 
     #[test]

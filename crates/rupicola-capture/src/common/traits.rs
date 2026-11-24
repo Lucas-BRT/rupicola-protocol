@@ -31,6 +31,19 @@ pub(crate) mod flavour {
         /// Fails when the frame cannot be grabbed.
         async fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError>;
 
+        /// Like [`Self::screenshot`], of the whole scrollable page. Only backends with
+        /// [`crate::session::Capability::FullPage`] override it.
+        ///
+        /// # Errors
+        ///
+        /// Fails when the backend cannot shoot more than what it shows, or the frame cannot be
+        /// grabbed.
+        async fn screenshot_full_page(&mut self, _id: &str) -> Result<Checkpoint, CaptureError> {
+            Err(CaptureError::environment(
+                "this backend cannot take a full-page checkpoint",
+            ))
+        }
+
         /// # Errors
         ///
         /// Fails when recording cannot start.

@@ -40,6 +40,7 @@ async fn main() -> Result<(), CaptureError> {
         steps: vec![
             Step::Checkpoint {
                 id: "before".to_owned(),
+                full_page: false,
             },
             Step::StartRecording,
             Step::Action {
@@ -57,6 +58,7 @@ async fn main() -> Result<(), CaptureError> {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
             Step::StopRecording {
                 id: "click".to_owned(),

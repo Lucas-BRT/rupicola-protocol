@@ -26,10 +26,28 @@ pub enum UiAction {
         #[serde(default)]
         modifiers: Vec<String>,
     },
+    /// Scrolls by `dx` and `dy` pixels: the page by turning the mouse wheel where the pointer is, or,
+    /// with a `target_id`, that element (or the closest ancestor that scrolls) without moving the
+    /// pointer, on backends that act on elements.
     Scroll {
         target_id: Option<String>,
         dx: f64,
         dy: f64,
+    },
+    /// Brings the element on screen, without moving the pointer.
+    ScrollIntoView {
+        target_id: String,
+    },
+    /// Scrolls the element, or the page when `target_id` is `None`, to an absolute offset in
+    /// pixels.
+    ScrollTo {
+        target_id: Option<String>,
+        x: f64,
+        y: f64,
+    },
+    /// Scrolls the element, or the page when `target_id` is `None`, down to its end.
+    ScrollToEnd {
+        target_id: Option<String>,
     },
     WaitMs {
         ms: u64,

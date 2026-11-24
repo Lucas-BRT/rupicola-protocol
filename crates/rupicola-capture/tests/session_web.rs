@@ -78,6 +78,7 @@ mod flavour {
         let steps = vec![
             Step::Checkpoint {
                 id: "before".to_owned(),
+                full_page: false,
             },
             Step::StartRecording,
             Step::Action {
@@ -101,6 +102,7 @@ mod flavour {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
             Step::StopRecording {
                 id: "walk".to_owned(),
@@ -151,6 +153,7 @@ mod flavour {
         let checkpoint = || {
             vec![Step::Checkpoint {
                 id: "home".to_owned(),
+                full_page: false,
             }]
         };
         let tree = |mode| {
@@ -247,6 +250,7 @@ mod flavour {
             },
             Step::Checkpoint {
                 id: "after".to_owned(),
+                full_page: false,
             },
         ];
         let mut plan = plan(&url, steps);
@@ -255,5 +259,204 @@ mod flavour {
         stop.store(true, Ordering::Relaxed);
         assert!(bundle.checkpoints[0].png.is_file());
         let _ = fs::remove_dir_all(&out);
+    }
+
+    /// A page three screens tall, with an element near its end.
+    const TALL_PAGE: &str = "data:text/html,<body style='margin:0;height:2160px;\
+        background:linear-gradient(red,blue)'><div id='deep' style='position:absolute;\
+        top:1800px;height:100px;width:100%;background:white'></div></body>";
+    const TALL_PAGE_HEIGHT: u32 = 2160;
+    const PNG_HEIGHT_OFFSET: usize = 20;
+    const PNG_FIELD_BYTES: usize = 4;
+    const DEEP_ID: &str = "deep";
+    /// A pause longer than any scroll of the tall page needs.
+    const LONG_PAUSE_MS: u64 = 600;
+
+    fn checkpoint(id: &str, full_page: bool) -> Step {
+        Step::Checkpoint {
+            id: id.to_owned(),
+            full_page,
+        }
+    }
+
+    fn act(action: UiAction) -> Step {
+        Step::Action { action }
+    }
+
+    fn press(key: &str) -> Step {
+        act(UiAction::PressKey {
+            key: key.to_owned(),
+            modifiers: Vec::new(),
+        })
+    }
+
+    /// Height in pixels of a PNG, read from its header.
+    fn png_height(path: &std::path::Path) -> u32 {
+        let bytes = fs::read(path).unwrap();
+        let field = &bytes[PNG_HEIGHT_OFFSET..PNG_HEIGHT_OFFSET + PNG_FIELD_BYTES];
+        u32::from_be_bytes(field.try_into().unwrap())
+    }
+
+    /// The bytes of each checkpoint a plan on the tall page takes, in order.
+    async fn shoot_tall_page(
+        backend: &WebBackend,
+        name: &str,
+        steps: Vec<Step>,
+    ) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        let out = crate::support::out_dir(&format!("web-{TAG}-{name}"));
+        let mut plan = plan(TALL_PAGE, steps);
+        plan.environment.reduced_motion = true;
+        let bundle = run_plan(backend, &plan, &out).await.unwrap();
+        bundle
+            .checkpoints
+            .into_iter()
+            .map(|c| {
+                let bytes = fs::read(&c.png).unwrap();
+                (c.png, bytes)
+            })
+            .collect()
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_checkpoint_right_after_a_scroll_key_shows_the_scrolled_page() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "settle",
+            vec![
+                checkpoint("top", false),
+                press("End"),
+                checkpoint("bottom", false),
+                // Nothing is left to scroll, so a long pause cannot change what is shown.
+                Step::Wait {
+                    condition: WaitCondition::Delay { ms: LONG_PAUSE_MS },
+                },
+                checkpoint("bottom-later", false),
+            ],
+        )
+        .await;
+        assert_ne!(shots[0].1, shots[1].1, "End had not scrolled yet");
+        assert_eq!(shots[1].1, shots[2].1, "the page was still moving");
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn a_full_page_checkpoint_is_as_tall_as_the_page() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "full-page",
+            vec![checkpoint("view", false), checkpoint("page", true)],
+        )
+        .await;
+        assert_eq!(png_height(&shots[0].0), VIEWPORT[1]);
+        assert_eq!(png_height(&shots[1].0), TALL_PAGE_HEIGHT);
+    }
+
+    /// A short page whose box turns red under the pointer, with a list that scrolls.
+    const HOVER_PAGE: &str = "data:text/html,<style>%23box{height:100px;background:blue}\
+        %23box:hover{background:red}%23list{height:100px;overflow:auto}</style>\
+        <div id='box'></div><div id='list'><div style='height:900px;background:linear-gradient(green,yellow)'></div></div>";
+
+    #[sync_test]
+    #[async_test]
+    async fn scrolling_an_element_does_not_hover_it() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let out = crate::support::out_dir(&format!("web-{TAG}-scroll-no-hover"));
+        let mut plan = plan(
+            HOVER_PAGE,
+            vec![
+                checkpoint("before", false),
+                act(UiAction::Scroll {
+                    target_id: Some("box".to_owned()),
+                    dx: 0.0,
+                    dy: 0.0,
+                }),
+                checkpoint("after-box", false),
+                act(UiAction::Scroll {
+                    target_id: Some("list".to_owned()),
+                    dx: 0.0,
+                    dy: 300.0,
+                }),
+                checkpoint("after-list", false),
+                act(UiAction::ScrollToEnd {
+                    target_id: Some("list".to_owned()),
+                }),
+                checkpoint("list-end", false),
+                act(UiAction::ScrollTo {
+                    target_id: Some("list".to_owned()),
+                    x: 0.0,
+                    y: 300.0,
+                }),
+                checkpoint("list-back", false),
+            ],
+        );
+        plan.environment.reduced_motion = true;
+        let bundle = run_plan(&backend, &plan, &out).await.unwrap();
+        let bytes = |index: usize| fs::read(&bundle.checkpoints[index].png).unwrap();
+        assert_eq!(bytes(0), bytes(1), "scrolling the box hovered it");
+        assert_ne!(bytes(0), bytes(2), "the list did not scroll");
+        assert_ne!(bytes(2), bytes(3), "scroll-to-end did not move the list");
+        assert_eq!(
+            bytes(2),
+            bytes(4),
+            "scroll-to did not go back to the offset"
+        );
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn scroll_actions_reach_an_element_a_position_and_the_end() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let shots = shoot_tall_page(
+            &backend,
+            "scroll-actions",
+            vec![
+                checkpoint("top", false),
+                act(UiAction::ScrollIntoView {
+                    target_id: DEEP_ID.to_owned(),
+                }),
+                checkpoint("deep", false),
+                act(UiAction::ScrollTo {
+                    target_id: None,
+                    x: 0.0,
+                    y: 0.0,
+                }),
+                checkpoint("top-again", false),
+                act(UiAction::ScrollToEnd { target_id: None }),
+                checkpoint("end", false),
+                act(UiAction::ScrollTo {
+                    target_id: None,
+                    x: 0.0,
+                    y: 0.0,
+                }),
+                press("End"),
+                checkpoint("end-by-key", false),
+            ],
+        )
+        .await;
+        assert_ne!(shots[0].1, shots[1].1, "the element was not scrolled to");
+        assert_eq!(
+            shots[0].1, shots[2].1,
+            "scroll-to did not return to the top"
+        );
+        assert_ne!(shots[0].1, shots[3].1, "scroll-to-end did not move");
+        assert_eq!(
+            shots[3].1, shots[4].1,
+            "scroll-to-end did not reach the key's end"
+        );
     }
 }

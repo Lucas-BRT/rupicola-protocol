@@ -9,6 +9,10 @@ const net = require('net');
 const WAIT_TIMEOUT_MS = 10000;
 /** Pause between recorded frames, in milliseconds. */
 const FRAME_INTERVAL_MS = 100;
+/** Frames in a row the page must show no scrolling before an action counts as done. */
+const SETTLE_STABLE_FRAMES = 3;
+/** Longest an action may take to settle, in milliseconds. */
+const SETTLE_LIMIT_MS = 3000;
 /** JPEG quality of recorded frames. */
 const FRAME_QUALITY = 80;
 
@@ -19,6 +23,7 @@ let page = null;
 let recording = null;
 let waitTimeout = WAIT_TIMEOUT_MS;
 let frameInterval = FRAME_INTERVAL_MS;
+let settleMs = 0;
 
 /** A target is a Playwright selector when it says so, and the id of an element otherwise. */
 const selector = (id) =>
@@ -112,6 +117,7 @@ async function launch(request) {
     page.setDefaultTimeout(request.timeout_ms);
   }
   if (request.frame_interval_ms) frameInterval = request.frame_interval_ms;
+  settleMs = request.settle_ms || 0;
   try {
     await page.goto(request.url, { waitUntil: 'networkidle' });
   } catch (error) {
@@ -120,7 +126,87 @@ async function launch(request) {
   if (request.warmup_ms > 0) await page.waitForTimeout(request.warmup_ms);
 }
 
+/**
+ * Resolves once the page has painted a few frames without scrolling: neither the window nor
+ * any element moved. Keys, wheel turns and clicks scroll a frame or more after they return,
+ * so a screenshot taken right away would show the page before the action.
+ */
+function settle() {
+  return page.evaluate(
+    ([stableFrames, limitMs]) =>
+      new Promise((resolve) => {
+        const started = performance.now();
+        let scrolled = false;
+        let last = [scrollX, scrollY];
+        let still = 0;
+        const onScroll = () => {
+          scrolled = true;
+        };
+        addEventListener('scroll', onScroll, true);
+        const tick = () => {
+          const now = [scrollX, scrollY];
+          if (scrolled || now[0] !== last[0] || now[1] !== last[1]) {
+            still = 0;
+            last = now;
+            scrolled = false;
+          } else {
+            still += 1;
+          }
+          if (still >= stableFrames || performance.now() - started > limitMs) {
+            removeEventListener('scroll', onScroll, true);
+            resolve();
+          } else {
+            requestAnimationFrame(tick);
+          }
+        };
+        requestAnimationFrame(tick);
+      }),
+    [SETTLE_STABLE_FRAMES, SETTLE_LIMIT_MS],
+  );
+}
+
+/** Scrolls by `dx` and `dy` the element, or its closest ancestor that can scroll that way. */
+function scrollByIn(el, [dx, dy]) {
+  const scrolls = (node, size, client, overflow) =>
+    node[size] > node[client] && /(auto|scroll)/.test(getComputedStyle(node)[overflow]);
+  let box = el;
+  while (
+    box &&
+    box !== document.body &&
+    box !== document.documentElement &&
+    !(dy !== 0 && scrolls(box, 'scrollHeight', 'clientHeight', 'overflowY')) &&
+    !(dx !== 0 && scrolls(box, 'scrollWidth', 'clientWidth', 'overflowX'))
+  ) {
+    box = box.parentElement;
+  }
+  if (!box || box === document.body || box === document.documentElement) {
+    box = document.scrollingElement;
+  }
+  box.scrollBy(dx, dy);
+}
+
+/** Scrolls an element, or the page, to `x` and `y`; a `null` is the current left, or the end. */
+function scrollToIn(el, [x, y]) {
+  const box = el === document.documentElement ? document.scrollingElement : el;
+  box.scrollTo(x ?? box.scrollLeft, y ?? box.scrollHeight);
+}
+
+function scrollTo(id, x, y) {
+  return page
+    .locator(id ? selector(id) : 'html')
+    .first()
+    .evaluate(scrollToIn, [x, y]);
+}
+
+/** Performs `action`, then waits until its effect is on screen. */
 async function perform(action) {
+  await act(action);
+  if (action.action === 'wait-ms') return;
+  await settle();
+  if (settleMs > 0) await page.waitForTimeout(settleMs);
+}
+
+async function act(action) {
   switch (action.action) {
     case 'type-text':
       return page.fill(selector(action.target_id), action.text);
@@ -135,8 +221,20 @@ async function perform(action) {
     case 'press-key':
       return page.keyboard.press([...(action.modifiers || []), action.key].join('+'));
     case 'scroll':
-      if (action.target_id) await page.hover(selector(action.target_id));
+      if (action.target_id) {
+        // No pointer move: hovering would turn on the target's :hover styles.
+        return page
+          .locator(selector(action.target_id))
+          .first()
+          .evaluate(scrollByIn, [action.dx, action.dy]);
+      }
       return page.mouse.wheel(action.dx, action.dy);
+    case 'scroll-into-view':
+      return page.locator(selector(action.target_id)).first().scrollIntoViewIfNeeded();
+    case 'scroll-to':
+      return scrollTo(action.target_id, action.x, action.y);
+    case 'scroll-to-end':
+      return scrollTo(action.target_id, null, null);
     case 'wait-ms':
       return page.waitForTimeout(action.ms);
     default:
@@ -201,7 +299,7 @@ async function handle(request) {
     case 'wait':
       return waitFor(request.condition);
     case 'screenshot':
-      await page.screenshot({ path: request.path });
+      await page.screenshot({ path: request.path, fullPage: request.full_page });
       return request.tree ? { snapshot: await snapshot() } : {};
     case 'start-recording':
       return startRecording(request.dir);

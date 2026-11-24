@@ -73,6 +73,7 @@ pub(crate) mod flavour {
                 Capability::Video,
                 Capability::ColorScheme,
                 Capability::Scale,
+                Capability::FullPage,
             ])
         }
 
@@ -136,6 +137,23 @@ pub(crate) mod flavour {
                 .into_result()
         }
 
+        /// One checkpoint of the viewport, or of the whole page when `full_page`.
+        async fn shoot(&mut self, id: &str, full_page: bool) -> Result<Checkpoint, CaptureError> {
+            let png = self.artifacts.png(id)?;
+            let mut reply = self
+                .call(&DriverRequest::Screenshot {
+                    path: &png,
+                    tree: self.tree,
+                    full_page,
+                })
+                .await?;
+            Ok(Checkpoint {
+                id: id.to_owned(),
+                png,
+                snapshot: reply.tree(),
+            })
+        }
+
         /// Encodes `frames` into `mp4`, holding each until the next was taken.
         async fn encode(frames: &[Frame], mp4: &Path, list: &Path) -> Result<(), CaptureError> {
             Runtime::write(list, Encoder::frame_list(frames).as_bytes())
@@ -169,18 +187,11 @@ pub(crate) mod flavour {
         }
 
         async fn screenshot(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
-            let png = self.artifacts.png(id)?;
-            let mut reply = self
-                .call(&DriverRequest::Screenshot {
-                    path: &png,
-                    tree: self.tree,
-                })
-                .await?;
-            Ok(Checkpoint {
-                id: id.to_owned(),
-                png,
-                snapshot: reply.tree(),
-            })
+            self.shoot(id, false).await
+        }
+
+        async fn screenshot_full_page(&mut self, id: &str) -> Result<Checkpoint, CaptureError> {
+            self.shoot(id, true).await
         }
 
         async fn start_recording(&mut self) -> Result<(), CaptureError> {

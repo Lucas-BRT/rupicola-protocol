@@ -117,6 +117,10 @@ pub struct Environment {
     /// Locale of the target, such as `en-US`; backends that have none ignore it.
     #[serde(default)]
     pub locale: Option<String>,
+    /// Extra milliseconds a web target gets after each action, on top of waiting for its
+    /// scrolling and next paint to settle; none when unset.
+    #[serde(default)]
+    pub settle_ms: Option<u64>,
     /// Longest the target gets for one step, in milliseconds; the backend's own limit when
     /// unset.
     #[serde(default)]
@@ -142,6 +146,7 @@ impl Environment {
             color_scheme: None,
             reduced_motion: false,
             warmup_ms: DEFAULT_WARMUP_MS,
+            settle_ms: None,
             locale: None,
             timeout_ms: None,
             frame_interval_ms: None,

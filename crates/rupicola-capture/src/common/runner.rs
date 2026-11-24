@@ -46,8 +46,12 @@ pub(crate) mod flavour {
             match step {
                 Step::Action { action } => session.perform(action).await?,
                 Step::Wait { condition } => session.wait_for(condition).await?,
-                Step::Checkpoint { id } => {
-                    let mut checkpoint = session.screenshot(id).await?;
+                Step::Checkpoint { id, full_page } => {
+                    let mut checkpoint = if *full_page {
+                        session.screenshot_full_page(id).await?
+                    } else {
+                        session.screenshot(id).await?
+                    };
                     // Whatever the backend collected, the plan decides what is kept.
                     checkpoint.snapshot = plan.environment.ui_tree.apply(checkpoint.snapshot);
                     bundle.checkpoints.push(checkpoint);

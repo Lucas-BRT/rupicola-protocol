@@ -55,12 +55,12 @@ let plan = Plan {
     },
     environment: Environment::new([480, 240]),
     steps: vec![
-        Step::Checkpoint { id: "before".to_owned() },
+        Step::Checkpoint { id: "before".to_owned(), full_page: false },
         Step::StartRecording,
         Step::Action { action: UiAction::Click { target_id: "go".to_owned() } },
         Step::Wait { condition: WaitCondition::Text { text: "Done".to_owned() } },
         Step::Wait { condition: WaitCondition::Delay { ms: 500 } },
-        Step::Checkpoint { id: "after".to_owned() },
+        Step::Checkpoint { id: "after".to_owned(), full_page: false },
         Step::StopRecording { id: "click".to_owned() },
     ],
     allow_degraded: false,
@@ -69,6 +69,9 @@ let plan = Plan {
 
 - A `Checkpoint` is a screenshot; a clip is everything between `StartRecording` and `StopRecording`. Ids become file names, so they may only hold letters, digits, `-` and `_`.
 - On the web backend a `target_id` is an element id (`"go"`), or any [Playwright selector](https://playwright.dev/docs/selectors) when it says so: `"css=button.primary"`, `"text=Save"`, `"//li[2]"`.
+- On the web backend an action returns once its effect is on screen: the driver waits for the page to paint a few frames without scrolling, so a `Checkpoint` right after `PressKey`, `Scroll` or `Click` shows the result. `environment.settle_ms` adds a fixed pause after every action for pages that animate for longer.
+- `UiAction::Scroll` scrolls by a delta: with the mouse wheel where the pointer is, or, with a `target_id`, the element (or its closest scrollable ancestor) without moving the pointer. `ScrollIntoView` brings an element on screen without moving the pointer, `ScrollTo` goes to an offset and `ScrollToEnd` to the end, of the page or, with a `target_id`, of an element.
+- `Checkpoint { full_page: true }` shoots the whole scrollable page instead of the viewport. It needs the `full-page` capability, which only `WebBackend` has.
 - `Environment` also sets `scale`, `color_scheme`, `reduced_motion`, `locale`, a per-step `timeout_ms` and the `frame_interval_ms` of recordings; backends ignore what they have no notion of.
 
 A plan is plain data, so it can also be written as JSON and read with `serde_json::from_str::<Plan>`. Anything left out takes its default:
@@ -143,9 +146,9 @@ let plan = Plan {
     target: Target { command: "./my-gtk-app".to_owned(), args: Vec::new() },
     environment: Environment::new([640, 480]),
     steps: vec![
-        Step::Checkpoint { id: "closed".to_owned() },
+        Step::Checkpoint { id: "closed".to_owned(), full_page: false },
         Step::Action { action: UiAction::ClickAt { x: 120.0, y: 40.0 } },
-        Step::Checkpoint { id: "open".to_owned() },
+        Step::Checkpoint { id: "open".to_owned(), full_page: false },
     ],
     allow_degraded: false,
 };
@@ -191,7 +194,7 @@ mp4_to_gif(&bundle.clips[0].mp4, Path::new("click.gif"), 320)
 
 | Backend | Target | Requirements | Capabilities |
 | :--- | :--- | :--- | :--- |
-| `WebBackend` | Web (`chromium` / `firefox` / `webkit`) | Node.js + Playwright, `ffmpeg` for clips | actions on elements, UI tree, video, color scheme, scale |
+| `WebBackend` | Web (`chromium` / `firefox` / `webkit`) | Node.js + Playwright, `ffmpeg` for clips | actions on elements, UI tree, video, color scheme, scale, full-page checkpoints |
 | `CdpBackend` | Web (no Node/Playwright) | Local Chromium / Chrome / Brave, and `sh` | UI tree, color scheme, scale, waits on elements and text (screenshots always). On Unix it keeps one browser for the session and speaks the Chrome DevTools Protocol over its pipes; elsewhere it runs the browser again for each screenshot and only takes screenshots. Actions on named elements and video are not supported. |
 | `LinuxX11Backend` | Linux Desktop (GTK4, Iced, egui, Qt) | `Xvfb`, `ffmpeg`, `python3` with libX11 and libXtst | pointer input, video |
 | `GtkBroadwayBackend` | Linux GTK4 (no X11/Wayland) | `gtk4-broadwayd`, `WebBackend` | pointer input, video |
