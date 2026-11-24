@@ -38,9 +38,16 @@ function domSnapshot() {
         hovered: el.matches(':hover'),
         pressed: el.getAttribute('aria-pressed') === 'true',
         checked: 'checked' in el ? Boolean(el.checked) : null,
-        selected: null,
+        selected: el.hasAttribute("aria-selected") ? el.getAttribute("aria-selected") === "true" : null,
       },
       style_hint: el.className ? String(el.className) : null,
+      style: {
+        color: s.color || null,
+        background_color: s.backgroundColor || null,
+        font_size_px: Number.isFinite(Number.parseFloat(s.fontSize)) ? Number.parseFloat(s.fontSize) : null,
+        overflow_x: s.overflowX || null,
+        overflow_y: s.overflowY || null,
+      },
       children,
     };
   }

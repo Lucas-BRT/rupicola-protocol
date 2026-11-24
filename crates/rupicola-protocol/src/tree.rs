@@ -154,6 +154,21 @@ pub struct WidgetState {
     pub selected: Option<bool>,
 }
 
+/// Computed style properties reported for a DOM widget when available.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ComputedStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size_px: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_x: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_y: Option<String>,
+}
+
 /// Node in a captured UI tree.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WidgetNode {
@@ -172,6 +187,8 @@ pub struct WidgetNode {
     pub state: WidgetState,
     #[serde(default)]
     pub style_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<ComputedStyle>,
     #[serde(default)]
     pub children: Vec<WidgetNode>,
 }
@@ -294,6 +311,7 @@ mod tests {
                 ..WidgetState::default()
             },
             style_hint: None,
+            style: None,
             children: Vec::new(),
         }
     }
@@ -416,5 +434,34 @@ mod tests {
         ] {
             assert_eq!(WidgetKind::from_android_class(class), kind, "{class}");
         }
+    }
+}
+
+#[cfg(test)]
+mod computed_style_tests {
+    use super::*;
+
+    #[test]
+    fn computed_style_and_selected_round_trip() {
+        let json = r#"{
+            "id": "tab-1",
+            "role": "tab",
+            "kind": "tab",
+            "bounds": {"x": 0.0, "y": 0.0, "width": 80.0, "height": 32.0},
+            "state": {"visible": true, "enabled": true, "selected": true},
+            "style": {
+                "color": "rgb(255, 255, 255)",
+                "background_color": "rgb(17, 17, 17)",
+                "font_size_px": 14.0,
+                "overflow_x": "hidden",
+                "overflow_y": "auto"
+            }
+        }"#;
+        let node: WidgetNode = serde_json::from_str(json).unwrap();
+        assert_eq!(node.state.selected, Some(true));
+        let style = node.style.as_ref().unwrap();
+        assert_eq!(style.color.as_deref(), Some("rgb(255, 255, 255)"));
+        assert_eq!(style.font_size_px, Some(14.0));
+        assert_eq!(style.overflow_y.as_deref(), Some("auto"));
     }
 }

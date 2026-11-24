@@ -48,6 +48,7 @@ pub fn hello_world_tree(
                 ..WidgetState::default()
             },
             style_hint: None,
+            style: None,
             children: vec![
                 WidgetNode {
                     id: "hello-heading".into(),
@@ -67,6 +68,7 @@ pub fn hello_world_tree(
                         ..WidgetState::default()
                     },
                     style_hint: style_hint.map(str::to_owned),
+                    style: None,
                     children: vec![],
                 },
                 WidgetNode {
@@ -87,6 +89,7 @@ pub fn hello_world_tree(
                         ..WidgetState::default()
                     },
                     style_hint: Some("primary".into()),
+                    style: None,
                     children: vec![],
                 },
             ],
