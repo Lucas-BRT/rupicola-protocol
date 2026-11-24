@@ -360,4 +360,56 @@ mod flavour {
             }
         }
     }
+
+    #[test]
+    fn network_policy_public_only_blocks_private_and_allows_public() {
+        let policy = crate::session::NetworkPolicy::public_only();
+        for blocked in [
+            "http://127.0.0.1:8080/health",
+            "http://localhost/admin",
+            "http://sub.localhost/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://10.0.0.1/",
+            "http://192.168.1.1/",
+            "http://[::1]:8080/",
+            "http://[::ffff:127.0.0.1]/",
+            "file:///etc/passwd",
+            "http://user:pass@93.184.216.34/",
+        ] {
+            let err = policy.check_url_syntax(blocked).unwrap_err();
+            assert_eq!(err.class, ErrorClass::Target, "{blocked}");
+        }
+        assert!(
+            policy
+                .check_url_syntax("https://93.184.216.34/page")
+                .is_ok()
+        );
+        assert!(
+            crate::session::NetworkPolicy::Unrestricted
+                .check_url_syntax("http://127.0.0.1:8080")
+                .is_ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cdp_backend_no_sandbox_is_opt_in() {
+        let env = Environment::new([800, 600]);
+        let default_cmd =
+            crate::backend::CdpBackend::new("chromium").launch(&env, Path::new("/tmp/p"));
+        let default_args: Vec<_> = default_cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(!default_args.iter().any(|a| a == "--no-sandbox"));
+
+        let opt_in_cmd = crate::backend::CdpBackend::new("chromium")
+            .with_no_sandbox(true)
+            .launch(&env, Path::new("/tmp/p"));
+        let opt_in_args: Vec<_> = opt_in_cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(opt_in_args.iter().any(|a| a == "--no-sandbox"));
+    }
 }

@@ -82,6 +82,11 @@ pub(crate) mod flavour {
             environment: &Environment,
             out: &Path,
         ) -> Result<Box<dyn CaptureSession>, CaptureError> {
+            crate::common::network::flavour::check_network_url(
+                environment.network_policy,
+                &target.command,
+            )
+            .await?;
             Runtime::create_dir_all(out)
                 .await
                 .map_err(|e| CaptureError::environment(format!("create {}: {e}", out.display())))?;

@@ -1,6 +1,8 @@
 use super::dom_tree::DomTree;
 use super::web::WebBackend;
-use crate::session::{CaptureError, ColorScheme, Environment, ErrorClass, Target, WaitCondition};
+use crate::session::{
+    CaptureError, ColorScheme, Environment, ErrorClass, NetworkPolicy, Target, WaitCondition,
+};
 use rupicola_protocol::{UiAction, UiSnapshot};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -20,6 +22,7 @@ pub(crate) enum DriverRequest<'a> {
         locale: Option<&'a str>,
         timeout_ms: Option<u64>,
         frame_interval_ms: Option<u64>,
+        network_policy: NetworkPolicy,
     },
     Perform {
         action: &'a UiAction,
@@ -80,6 +83,7 @@ impl<'a> DriverRequest<'a> {
             locale: environment.locale.as_deref(),
             timeout_ms: environment.timeout_ms,
             frame_interval_ms: environment.frame_interval_ms,
+            network_policy: environment.network_policy,
         }
     }
 }

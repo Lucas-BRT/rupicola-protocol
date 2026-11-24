@@ -2,6 +2,8 @@
 // per line on stdin and answers each with one JSON line on stdout:
 //   {"ok":true, ...}  or  {"ok":false,"class":"environment"|"target","error":"..."}
 const readline = require('readline');
+const dns = require('dns').promises;
+const net = require('net');
 
 /** Longest a wait condition may take, in milliseconds. */
 const WAIT_TIMEOUT_MS = 10000;
@@ -29,6 +31,57 @@ class DriverError extends Error {
   }
 }
 
+function isForbiddenIpv4(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
+  const [a, b] = parts;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    a >= 224
+  );
+}
+
+function isForbiddenIp(rawIp) {
+  const ip = rawIp.toLowerCase();
+  if (net.isIPv4(ip)) return isForbiddenIpv4(ip);
+  if (!net.isIPv6(ip)) return true;
+  if (ip === '::1' || ip === '::' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('ff')) {
+    return true;
+  }
+  if (ip.startsWith('::ffff:')) {
+    const mapped = ip.slice('::ffff:'.length);
+    if (net.isIPv4(mapped)) return isForbiddenIpv4(mapped);
+  }
+  return false;
+}
+
+async function isUrlAllowed(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) return false;
+  if (net.isIP(host)) return !isForbiddenIp(host);
+  try {
+    const records = await dns.lookup(host, { all: true });
+    if (!records || records.length === 0) return false;
+    return records.every((record) => !isForbiddenIp(record.address));
+  } catch {
+    return false;
+  }
+}
+
 async function launch(request) {
   try {
     pw = require(process.env.PW_DIR);
@@ -44,6 +97,15 @@ async function launch(request) {
     reducedMotion: request.reduced_motion ? 'reduce' : 'no-preference',
     ...(request.locale ? { locale: request.locale } : {}),
   });
+  if (request.network_policy === 'public-only') {
+    await context.route('**/*', async (route) => {
+      if (await isUrlAllowed(route.request().url())) {
+        await route.continue();
+      } else {
+        await route.abort('blockedbyclient');
+      }
+    });
+  }
   page = await context.newPage();
   if (request.timeout_ms) {
     waitTimeout = request.timeout_ms;

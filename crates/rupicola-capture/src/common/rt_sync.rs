@@ -139,6 +139,15 @@ impl Runtime {
         TcpStream::connect_timeout(&address, Duration::from_millis(timeout_ms)).is_ok()
     }
 
+    /// Resolves `host:port` to its IP addresses.
+    pub(crate) fn lookup_ips(host: &str, port: u16) -> Result<Vec<std::net::IpAddr>, CaptureError> {
+        use std::net::ToSocketAddrs as _;
+        let addrs = (host, port).to_socket_addrs().map_err(|err| {
+            CaptureError::target(format!("failed to resolve host `{host}`: {err}"))
+        })?;
+        Ok(addrs.map(|addr| addr.ip()).collect())
+    }
+
     pub(crate) fn create_dir_all(path: &Path) -> io::Result<()> {
         std::fs::create_dir_all(path)
     }

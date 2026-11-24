@@ -26,7 +26,8 @@ pub(crate) mod flavour {
     use crate::common::rt::Runtime;
     use crate::common::traits::flavour::{CaptureBackend, CaptureSession};
     use crate::session::{
-        Capabilities, CaptureError, Checkpoint, Clip, Environment, Target, WaitCondition,
+        Capabilities, CaptureError, Checkpoint, Clip, Environment, NetworkPolicy, Target,
+        WaitCondition,
     };
     #[cfg(unix)]
     use crate::session::{Capability, ColorScheme, UiTreeMode};
@@ -70,9 +71,7 @@ pub(crate) mod flavour {
         async fn discover() -> Option<Self> {
             for candidate in BROWSER_CANDIDATES {
                 if Runtime::is_available(Tool(candidate)).await {
-                    return Some(Self {
-                        browser_bin: PathBuf::from(candidate),
-                    });
+                    return Some(Self::new(candidate));
                 }
             }
             None
@@ -100,6 +99,11 @@ pub(crate) mod flavour {
             environment: &Environment,
             out: &Path,
         ) -> Result<Box<dyn CaptureSession>, CaptureError> {
+            crate::common::network::flavour::check_network_url(
+                environment.network_policy,
+                &target.command,
+            )
+            .await?;
             Runtime::create_dir_all(out)
                 .await
                 .map_err(|e| CaptureError::environment(format!("create {}: {e}", out.display())))?;
@@ -121,6 +125,7 @@ pub(crate) mod flavour {
                 profile,
                 tree: environment.ui_tree != UiTreeMode::Off,
                 timeout_ms: environment.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+                network_policy: environment.network_policy,
             };
             if let Err(error) = session.open(&target.command, environment).await {
                 let _ = Box::new(session).finish().await;
@@ -143,18 +148,18 @@ pub(crate) mod flavour {
         /// Whether the plan wants the page's tree with each screenshot.
         tree: bool,
         timeout_ms: u64,
+        network_policy: NetworkPolicy,
     }
 
     #[cfg(unix)]
     impl CdpSession {
-        /// Sends a command and waits for its reply. Events, and replies to anything else,
-        /// are read past. `to_page` aims the command at the page instead of the browser.
-        async fn request(
+        /// Sends a CDP command without waiting for its reply, returning its assigned id.
+        async fn send_only(
             &mut self,
             to_page: bool,
             method: &str,
             params: Value,
-        ) -> Result<Value, CaptureError> {
+        ) -> Result<u64, CaptureError> {
             self.next_id += 1;
             let id = self.next_id;
             let mut message = json!({ "id": id, "method": method });
@@ -169,6 +174,18 @@ pub(crate) mod flavour {
                 .write(&bytes)
                 .await
                 .map_err(|e| CaptureError::environment(format!("write to the browser: {e}")))?;
+            Ok(id)
+        }
+
+        /// Sends a command and waits for its reply. Events, and replies to anything else,
+        /// are read past. `to_page` aims the command at the page instead of the browser.
+        async fn request(
+            &mut self,
+            to_page: bool,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, CaptureError> {
+            let id = self.send_only(to_page, method, params).await?;
             loop {
                 let raw = self
                     .child
@@ -179,6 +196,39 @@ pub(crate) mod flavour {
                 let reply: Value = serde_json::from_slice(&raw).map_err(|e| {
                     CaptureError::environment(format!("read from the browser: {e}"))
                 })?;
+                if self.network_policy == NetworkPolicy::PublicOnly
+                    && reply.get("method").and_then(Value::as_str) == Some("Fetch.requestPaused")
+                    && let Some(req_id) = reply.pointer("/params/requestId").and_then(Value::as_str)
+                {
+                    let req_url = reply
+                        .pointer("/params/request/url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let allowed = crate::common::network::flavour::check_network_url(
+                        NetworkPolicy::PublicOnly,
+                        req_url,
+                    )
+                    .await
+                    .is_ok();
+                    if allowed {
+                        let _ = self
+                            .send_only(
+                                true,
+                                "Fetch.continueRequest",
+                                json!({ "requestId": req_id }),
+                            )
+                            .await;
+                    } else {
+                        let _ = self
+                            .send_only(
+                                true,
+                                "Fetch.failRequest",
+                                json!({ "requestId": req_id, "errorReason": "BlockedByClient" }),
+                            )
+                            .await;
+                    }
+                    continue;
+                }
                 if reply.get("id").and_then(Value::as_u64) != Some(id) {
                     continue;
                 }
@@ -294,6 +344,14 @@ pub(crate) mod flavour {
                         json!({ "locale": locale }),
                     )
                     .await;
+            }
+            if self.network_policy == NetworkPolicy::PublicOnly {
+                self.request(
+                    true,
+                    "Fetch.enable",
+                    json!({ "patterns": [{ "urlPattern": "*" }] }),
+                )
+                .await?;
             }
             let navigated = self
                 .request(true, "Page.navigate", json!({ "url": url }))
@@ -440,6 +498,11 @@ pub(crate) mod flavour {
             environment: &Environment,
             out: &Path,
         ) -> Result<Box<dyn CaptureSession>, CaptureError> {
+            crate::common::network::flavour::check_network_url(
+                environment.network_policy,
+                &target.command,
+            )
+            .await?;
             Runtime::create_dir_all(out)
                 .await
                 .map_err(|e| CaptureError::environment(format!("create {}: {e}", out.display())))?;

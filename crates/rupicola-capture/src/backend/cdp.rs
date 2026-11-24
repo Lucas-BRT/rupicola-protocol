@@ -37,9 +37,26 @@ pub(crate) const BROWSER_CANDIDATES: [&str; 9] = [
 #[derive(Clone, Debug)]
 pub struct CdpBackend {
     pub browser_bin: PathBuf,
+    pub no_sandbox: bool,
 }
 
 impl CdpBackend {
+    /// Creates a CDP backend targeting `browser_bin` with Chromium's sandbox enabled.
+    #[must_use]
+    pub fn new(browser_bin: impl Into<PathBuf>) -> Self {
+        Self {
+            browser_bin: browser_bin.into(),
+            no_sandbox: false,
+        }
+    }
+
+    /// Configures whether `--no-sandbox` is passed to the browser process.
+    #[must_use]
+    pub const fn with_no_sandbox(mut self, no_sandbox: bool) -> Self {
+        self.no_sandbox = no_sandbox;
+        self
+    }
+
     /// The command that starts the browser with its protocol on the session's pipes, a fresh
     /// profile in `profile`, and a blank page.
     #[cfg(unix)]
@@ -53,13 +70,16 @@ impl CdpBackend {
             .args([
                 "--headless=new",
                 "--disable-gpu",
-                "--no-sandbox",
                 "--hide-scrollbars",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--force-color-profile=srgb",
                 "--remote-debugging-pipe",
-            ])
+            ]);
+        if self.no_sandbox {
+            command.arg("--no-sandbox");
+        }
+        command
             .arg(format!("--window-size={width},{height}"))
             .arg(format!("--user-data-dir={}", profile.display()))
             .arg("about:blank")
@@ -74,13 +94,11 @@ impl CdpBackend {
     pub(crate) fn screenshot(&self, url: &str, environment: &Environment, png: &Path) -> Command {
         let [width, height] = environment.viewport;
         let mut command = Command::new(&self.browser_bin);
+        command.args(["--headless=new", "--disable-gpu", "--hide-scrollbars"]);
+        if self.no_sandbox {
+            command.arg("--no-sandbox");
+        }
         command
-            .args([
-                "--headless=new",
-                "--disable-gpu",
-                "--no-sandbox",
-                "--hide-scrollbars",
-            ])
             .arg(format!("--window-size={width},{height}"))
             .arg(format!("--screenshot={}", png.display()))
             .arg(url)

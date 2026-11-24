@@ -148,6 +148,17 @@ impl Runtime {
         )
     }
 
+    /// Resolves `host:port` to its IP addresses.
+    pub(crate) async fn lookup_ips(
+        host: &str,
+        port: u16,
+    ) -> Result<Vec<std::net::IpAddr>, CaptureError> {
+        let addrs = tokio::net::lookup_host((host, port)).await.map_err(|err| {
+            CaptureError::target(format!("failed to resolve host `{host}`: {err}"))
+        })?;
+        Ok(addrs.map(|addr| addr.ip()).collect())
+    }
+
     pub(crate) async fn create_dir_all(path: &Path) -> io::Result<()> {
         tokio::fs::create_dir_all(path).await
     }

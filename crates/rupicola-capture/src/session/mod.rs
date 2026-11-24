@@ -12,11 +12,13 @@ use std::path::PathBuf;
 
 mod capabilities;
 mod error;
+mod network;
 mod plan;
 mod probe;
 
 pub use capabilities::{Capabilities, Capability};
 pub use error::{CaptureError, ErrorClass};
+pub use network::NetworkPolicy;
 pub use plan::{Bundle, Plan, Preflight, Step};
 pub use probe::{BackendKind, BackendReport};
 
@@ -125,6 +127,9 @@ pub struct Environment {
     /// Whether checkpoints keep the UI tree, and how much of it.
     #[serde(default)]
     pub ui_tree: UiTreeMode,
+    /// Network access policy enforced on web capture targets and subresources.
+    #[serde(default)]
+    pub network_policy: NetworkPolicy,
 }
 
 impl Environment {
@@ -141,6 +146,7 @@ impl Environment {
             timeout_ms: None,
             frame_interval_ms: None,
             ui_tree: UiTreeMode::Off,
+            network_policy: NetworkPolicy::Unrestricted,
         }
     }
 }
