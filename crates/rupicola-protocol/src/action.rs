@@ -26,7 +26,9 @@ pub enum UiAction {
         #[serde(default)]
         modifiers: Vec<String>,
     },
-    /// Turns the mouse wheel by `dx` and `dy` pixels, over `target_id` when given.
+    /// Scrolls by `dx` and `dy` pixels: the page by turning the mouse wheel where the pointer is, or,
+    /// with a `target_id`, that element (or the closest ancestor that scrolls) without moving the
+    /// pointer, on backends that act on elements.
     Scroll {
         target_id: Option<String>,
         dx: f64,

@@ -70,7 +70,7 @@ let plan = Plan {
 - A `Checkpoint` is a screenshot; a clip is everything between `StartRecording` and `StopRecording`. Ids become file names, so they may only hold letters, digits, `-` and `_`.
 - On the web backend a `target_id` is an element id (`"go"`), or any [Playwright selector](https://playwright.dev/docs/selectors) when it says so: `"css=button.primary"`, `"text=Save"`, `"//li[2]"`.
 - On the web backend an action returns once its effect is on screen: the driver waits for the page to paint a few frames without scrolling, so a `Checkpoint` right after `PressKey`, `Scroll` or `Click` shows the result. `environment.settle_ms` adds a fixed pause after every action for pages that animate for longer.
-- `UiAction::Scroll` turns the wheel by a delta. `ScrollIntoView` brings an element on screen without moving the pointer, `ScrollTo` goes to an offset and `ScrollToEnd` to the end, of the page or, with a `target_id`, of an element.
+- `UiAction::Scroll` scrolls by a delta: with the mouse wheel where the pointer is, or, with a `target_id`, the element (or its closest scrollable ancestor) without moving the pointer. `ScrollIntoView` brings an element on screen without moving the pointer, `ScrollTo` goes to an offset and `ScrollToEnd` to the end, of the page or, with a `target_id`, of an element.
 - `Checkpoint { full_page: true }` shoots the whole scrollable page instead of the viewport. It needs the `full-page` capability, which only `WebBackend` has.
 - `Environment` also sets `scale`, `color_scheme`, `reduced_motion`, `locale`, a per-step `timeout_ms` and the `frame_interval_ms` of recordings; backends ignore what they have no notion of.
 

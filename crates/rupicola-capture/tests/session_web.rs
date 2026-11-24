@@ -360,6 +360,60 @@ mod flavour {
         assert_eq!(png_height(&shots[1].0), TALL_PAGE_HEIGHT);
     }
 
+    /// A short page whose box turns red under the pointer, with a list that scrolls.
+    const HOVER_PAGE: &str = "data:text/html,<style>%23box{height:100px;background:blue}\
+        %23box:hover{background:red}%23list{height:100px;overflow:auto}</style>\
+        <div id='box'></div><div id='list'><div style='height:900px;background:linear-gradient(green,yellow)'></div></div>";
+
+    #[sync_test]
+    #[async_test]
+    async fn scrolling_an_element_does_not_hover_it() {
+        let found = WebBackend::discover("chromium").await;
+        let Some(backend) = found else {
+            return;
+        };
+        let out = crate::support::out_dir(&format!("web-{TAG}-scroll-no-hover"));
+        let mut plan = plan(
+            HOVER_PAGE,
+            vec![
+                checkpoint("before", false),
+                act(UiAction::Scroll {
+                    target_id: Some("box".to_owned()),
+                    dx: 0.0,
+                    dy: 0.0,
+                }),
+                checkpoint("after-box", false),
+                act(UiAction::Scroll {
+                    target_id: Some("list".to_owned()),
+                    dx: 0.0,
+                    dy: 300.0,
+                }),
+                checkpoint("after-list", false),
+                act(UiAction::ScrollToEnd {
+                    target_id: Some("list".to_owned()),
+                }),
+                checkpoint("list-end", false),
+                act(UiAction::ScrollTo {
+                    target_id: Some("list".to_owned()),
+                    x: 0.0,
+                    y: 300.0,
+                }),
+                checkpoint("list-back", false),
+            ],
+        );
+        plan.environment.reduced_motion = true;
+        let bundle = run_plan(&backend, &plan, &out).await.unwrap();
+        let bytes = |index: usize| fs::read(&bundle.checkpoints[index].png).unwrap();
+        assert_eq!(bytes(0), bytes(1), "scrolling the box hovered it");
+        assert_ne!(bytes(0), bytes(2), "the list did not scroll");
+        assert_ne!(bytes(2), bytes(3), "scroll-to-end did not move the list");
+        assert_eq!(
+            bytes(2),
+            bytes(4),
+            "scroll-to did not go back to the offset"
+        );
+    }
+
     #[sync_test]
     #[async_test]
     async fn scroll_actions_reach_an_element_a_position_and_the_end() {

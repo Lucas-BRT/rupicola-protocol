@@ -165,15 +165,37 @@ function settle() {
   );
 }
 
+/** Scrolls by `dx` and `dy` the element, or its closest ancestor that can scroll that way. */
+function scrollByIn(el, [dx, dy]) {
+  const scrolls = (node, size, client, overflow) =>
+    node[size] > node[client] && /(auto|scroll)/.test(getComputedStyle(node)[overflow]);
+  let box = el;
+  while (
+    box &&
+    box !== document.body &&
+    box !== document.documentElement &&
+    !(dy !== 0 && scrolls(box, 'scrollHeight', 'clientHeight', 'overflowY')) &&
+    !(dx !== 0 && scrolls(box, 'scrollWidth', 'clientWidth', 'overflowX'))
+  ) {
+    box = box.parentElement;
+  }
+  if (!box || box === document.body || box === document.documentElement) {
+    box = document.scrollingElement;
+  }
+  box.scrollBy(dx, dy);
+}
+
 /** Scrolls an element, or the page, to `x` and `y`; a `null` is the current left, or the end. */
-const SCROLL_TO_JS = `(el, [x, y]) => {
-  const box = el || document.scrollingElement;
+function scrollToIn(el, [x, y]) {
+  const box = el === document.documentElement ? document.scrollingElement : el;
   box.scrollTo(x ?? box.scrollLeft, y ?? box.scrollHeight);
-}`;
+}
 
 function scrollTo(id, x, y) {
-  if (id) return page.locator(selector(id)).first().evaluate(SCROLL_TO_JS, [x, y]);
-  return page.evaluate(`(${SCROLL_TO_JS})(null, ${JSON.stringify([x, y])})`);
+  return page
+    .locator(id ? selector(id) : 'html')
+    .first()
+    .evaluate(scrollToIn, [x, y]);
 }
 
 /** Performs `action`, then waits until its effect is on screen. */
@@ -199,7 +221,13 @@ async function act(action) {
     case 'press-key':
       return page.keyboard.press([...(action.modifiers || []), action.key].join('+'));
     case 'scroll':
-      if (action.target_id) await page.hover(selector(action.target_id));
+      if (action.target_id) {
+        // No pointer move: hovering would turn on the target's :hover styles.
+        return page
+          .locator(selector(action.target_id))
+          .first()
+          .evaluate(scrollByIn, [action.dx, action.dy]);
+      }
       return page.mouse.wheel(action.dx, action.dy);
     case 'scroll-into-view':
       return page.locator(selector(action.target_id)).first().scrollIntoViewIfNeeded();
