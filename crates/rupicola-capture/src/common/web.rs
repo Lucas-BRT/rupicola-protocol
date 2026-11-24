@@ -26,13 +26,20 @@ pub(crate) mod flavour {
     /// Finds `node` and a Playwright module.
     #[cfg_attr(feature = "async", async_trait::async_trait)]
     pub trait WebDiscovery: Sized {
-        /// Auto-discovers `node` and a local `playwright` module installation.
+        /// Auto-discovers `node` and a local `playwright` module installation for `browser_engine`.
         async fn discover(browser_engine: &str) -> Option<Self>;
+
+        /// Discovers `WebBackend` for the first supported engine in `preferred` (or
+        /// `SUPPORTED_ENGINES` when `preferred` is empty).
+        async fn discover_any(preferred: &[&str]) -> Option<Self>;
     }
 
     #[cfg_attr(feature = "async", async_trait::async_trait)]
     impl WebDiscovery for WebBackend {
         async fn discover(browser_engine: &str) -> Option<Self> {
+            if !Self::is_supported_engine(browser_engine) {
+                return None;
+            }
             let candidates = Self::candidates()?;
             let mut node_bin = None;
             for node in candidates.nodes {
@@ -57,6 +64,20 @@ pub(crate) mod flavour {
                 node_bin: node_bin?,
                 playwright_module: playwright_module?,
             })
+        }
+
+        async fn discover_any(preferred: &[&str]) -> Option<Self> {
+            let engines = if preferred.is_empty() {
+                crate::backend::web::SUPPORTED_ENGINES
+            } else {
+                preferred
+            };
+            for engine in engines {
+                if let Some(backend) = Self::discover(engine).await {
+                    return Some(backend);
+                }
+            }
+            None
         }
     }
 

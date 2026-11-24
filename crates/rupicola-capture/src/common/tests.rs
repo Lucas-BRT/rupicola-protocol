@@ -384,6 +384,26 @@ mod flavour {
                 assert_ne!(backend.missing_dependencies.len(), 0);
             }
         }
+        assert!(report.iter().any(|b| b.id == "web-firefox"));
+        assert!(report.iter().any(|b| b.id == "web-safari"));
+    }
+
+    #[sync_test]
+    #[async_test]
+    async fn web_discovery_validates_supported_engines() {
+        use super::super::web::flavour::WebDiscovery as _;
+        use crate::backend::WebBackend;
+
+        assert!(WebBackend::is_supported_engine("chromium"));
+        assert!(WebBackend::is_supported_engine("firefox"));
+        assert!(WebBackend::is_supported_engine("webkit"));
+        assert!(!WebBackend::is_supported_engine("unknown-browser"));
+        assert!(WebBackend::discover("unknown-browser").await.is_none());
+        assert!(
+            WebBackend::discover_any(&["unknown-browser"])
+                .await
+                .is_none()
+        );
     }
 
     #[test]

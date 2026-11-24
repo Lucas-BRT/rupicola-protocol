@@ -15,6 +15,8 @@ const MS_PER_SECOND: f64 = 1000.0;
 /// Environment variable that names a Playwright module directory.
 const PLAYWRIGHT_DIR_ENV: &str = "RUPICOLA_PLAYWRIGHT_DIR";
 const SESSION_DRIVER: &str = include_str!("../playwright_session_driver.js");
+/// Browser engines supported by `WebBackend` via Playwright.
+pub const SUPPORTED_ENGINES: &[&str] = &["chromium", "firefox", "webkit"];
 
 /// Headless Web capture backend powered by Playwright (`chromium`, `firefox`, or `webkit`).
 #[derive(Clone, Debug)]
@@ -31,6 +33,12 @@ pub(crate) struct Candidates {
 }
 
 impl WebBackend {
+    /// Whether `engine` is a Playwright web engine supported by [`WebBackend`].
+    #[must_use]
+    pub fn is_supported_engine(engine: &str) -> bool {
+        SUPPORTED_ENGINES.contains(&engine)
+    }
+
     /// The places `node` and Playwright are looked for; `None` without a home directory.
     pub(crate) fn candidates() -> Option<Candidates> {
         let home = std::env::var_os("HOME").map(PathBuf::from)?;
