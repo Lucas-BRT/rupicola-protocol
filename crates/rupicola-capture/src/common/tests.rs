@@ -341,4 +341,23 @@ mod flavour {
             "structure"
         );
     }
+
+    #[sync_test]
+    #[async_test]
+    async fn environment_probe_reports_all_known_backends() {
+        let report = super::super::probe::flavour::probe_environment().await;
+        assert_ne!(report.len(), 0);
+
+        for backend in &report {
+            assert_ne!(backend.id, "");
+            assert_ne!(backend.label, "");
+            assert_ne!(backend.install_guidance, "");
+            if backend.available {
+                assert_eq!(backend.missing_dependencies, Vec::<String>::new());
+                assert_ne!(backend.detected_binaries.len(), 0);
+            } else {
+                assert_ne!(backend.missing_dependencies.len(), 0);
+            }
+        }
+    }
 }

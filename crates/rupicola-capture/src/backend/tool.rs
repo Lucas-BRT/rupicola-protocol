@@ -16,6 +16,16 @@ impl Tool {
         command
     }
 
+    /// The command that prints the resolved path when the program is on `PATH`.
+    pub(crate) fn locate(self) -> Command {
+        let mut command = Command::new("which");
+        command
+            .arg(self.0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        command
+    }
+
     /// The error for a program that is not on `PATH`.
     pub(crate) fn missing(self) -> CaptureError {
         CaptureError::environment(format!("{} not found in PATH", self.0))

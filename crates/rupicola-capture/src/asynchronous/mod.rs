@@ -11,6 +11,7 @@ pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};
 pub use crate::common::annotate::asynchronous::{annotate_png, annotate_video, mp4_to_gif};
 pub use crate::common::cdp::asynchronous::CdpDiscovery;
+pub use crate::common::probe::asynchronous::probe_environment;
 pub use crate::common::runner::asynchronous::run_plan;
 pub use crate::common::traits::asynchronous::{CaptureBackend, CaptureSession};
 pub use crate::common::web::asynchronous::WebDiscovery;

@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One thing a backend may or may not be able to do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Capability {
     /// Performs every [`rupicola_protocol::UiAction`], including those that name a widget.
@@ -101,5 +101,12 @@ impl Serialize for Capabilities {
                 .into_iter()
                 .filter(|item| self.contains(*item)),
         )
+    }
+}
+
+impl<'de> Deserialize<'de> for Capabilities {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let items = Vec::<Capability>::deserialize(deserializer)?;
+        Ok(Self::of(&items))
     }
 }

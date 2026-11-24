@@ -115,6 +115,16 @@ impl Runtime {
             .is_ok_and(|status| status.success())
     }
 
+    /// Resolves `tool` on `PATH` when available.
+    pub(crate) async fn resolve_tool(tool: Tool) -> Option<std::path::PathBuf> {
+        let output = Self::output(tool.locate()).await.ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        (!path.is_empty()).then(|| std::path::PathBuf::from(path))
+    }
+
     /// # Errors
     ///
     /// An environment error naming the program when it is not on `PATH`.

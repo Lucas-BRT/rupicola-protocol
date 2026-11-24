@@ -13,10 +13,12 @@ use std::path::PathBuf;
 mod capabilities;
 mod error;
 mod plan;
+mod probe;
 
 pub use capabilities::{Capabilities, Capability};
 pub use error::{CaptureError, ErrorClass};
 pub use plan::{Bundle, Plan, Preflight, Step};
+pub use probe::{BackendKind, BackendReport};
 
 /// Pixel ratio used when a plan does not set one.
 const DEFAULT_SCALE: f64 = 1.0;

@@ -10,6 +10,7 @@ pub use crate::backend::{AndroidAdbBackend, CdpBackend, WebBackend};
 pub use crate::backend::{GtkBroadwayBackend, LinuxWaylandBackend, LinuxX11Backend};
 pub use crate::common::annotate::sync::{annotate_png, annotate_video, mp4_to_gif};
 pub use crate::common::cdp::sync::CdpDiscovery;
+pub use crate::common::probe::sync::probe_environment;
 pub use crate::common::runner::sync::run_plan;
 pub use crate::common::traits::sync::{CaptureBackend, CaptureSession};
 pub use crate::common::web::sync::WebDiscovery;

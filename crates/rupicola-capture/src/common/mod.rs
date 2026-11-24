@@ -12,6 +12,7 @@ pub(crate) mod gtk_broadway;
 pub(crate) mod linux_wayland;
 #[cfg(unix)]
 pub(crate) mod linux_x11;
+pub(crate) mod probe;
 #[cfg(feature = "async")]
 pub(crate) mod rt_async;
 #[cfg(feature = "sync")]

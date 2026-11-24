@@ -15,8 +15,17 @@ const SHELL: &str = "sh";
 const PIPE_SCRIPT: &str = r#"exec "$0" "$@" 3<&0 4>&1 0</dev/null 1>/dev/null"#;
 
 /// Chromium-family programs tried, in order, when looking for a browser.
-pub(crate) const BROWSER_CANDIDATES: [&str; 4] =
-    ["chromium", "chromium-browser", "google-chrome", "brave"];
+pub(crate) const BROWSER_CANDIDATES: [&str; 9] = [
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "brave",
+    "brave-browser",
+    "microsoft-edge",
+    "microsoft-edge-stable",
+    "vivaldi",
+];
 
 /// Lightweight Web capture backend using a local Chromium/Chrome binary directly, requiring no
 /// Node.js or Playwright installation.
