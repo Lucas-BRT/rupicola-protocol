@@ -51,6 +51,26 @@ function cdpRequire(target) {
   return el;
 }
 
+function cdpWaitForViewTransition(limitMs) {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const tick = () => {
+      const active = document.getAnimations().some((animation) => {
+        const pseudoElement = animation.effect?.pseudoElement;
+        return typeof pseudoElement === "string"
+          && pseudoElement.startsWith("::view-transition")
+          && (animation.playState === "running" || animation.playState === "pending");
+      });
+      if (!active || performance.now() - started > limitMs) {
+        resolve(true);
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    tick();
+  });
+}
+
 function cdpCenter(target) {
   const el = cdpRequire(target);
   el.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -106,12 +126,22 @@ function cdpScrollTo(target, x, y) {
 function cdpSettle(stableFrames, limitMs) {
   return new Promise((resolve) => {
     const started = performance.now();
+    let sawAnimation = false;
     let scrolled = false;
     let last = [window.scrollX, window.scrollY];
     let still = 0;
     const onScroll = () => { scrolled = true; };
     addEventListener("scroll", onScroll, true);
     const tick = () => {
+      const animationActive = document.getAnimations().some((animation) => {
+        const timing = animation.effect?.getComputedTiming();
+        const currentTime = animation.currentTime;
+        return timing
+          && Number.isFinite(timing.endTime)
+          && (animation.playState === "running" || animation.playState === "pending")
+          && (currentTime === null || timing.endTime > currentTime);
+      });
+      sawAnimation ||= animationActive;
       const now = [window.scrollX, window.scrollY];
       if (scrolled || now[0] !== last[0] || now[1] !== last[1]) {
         still = 0;
@@ -120,7 +150,8 @@ function cdpSettle(stableFrames, limitMs) {
       } else {
         still += 1;
       }
-      if (still >= stableFrames || performance.now() - started > limitMs) {
+      const maxWaitMs = sawAnimation ? Math.max(limitMs, 1500) : limitMs;
+      if ((!animationActive && still >= stableFrames) || performance.now() - started > maxWaitMs) {
         removeEventListener("scroll", onScroll, true);
         resolve(true);
       } else {
