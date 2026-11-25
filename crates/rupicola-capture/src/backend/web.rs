@@ -12,6 +12,8 @@ pub(crate) const FRAME_LIST: &str = "frames.txt";
 const LAST_FRAME_SECONDS: f64 = 0.1;
 /// Milliseconds per second.
 const MS_PER_SECOND: f64 = 1000.0;
+/// The concat image demuxer defaults to 25 fps; use millisecond precision for frame durations.
+const CONCAT_INPUT_FRAMERATE: &str = "1000";
 /// Environment variable that names a Playwright module directory.
 const PLAYWRIGHT_DIR_ENV: &str = "RUPICOLA_PLAYWRIGHT_DIR";
 const SESSION_DRIVER: &str = include_str!("../playwright_session_driver.js");
@@ -92,13 +94,17 @@ impl Encoder {
             });
             let _ = write!(
                 script,
-                "file '{}'\nduration {seconds:.3}\n",
+                "file '{}'\noption framerate {CONCAT_INPUT_FRAMERATE}\nduration {seconds:.3}\n",
                 Self::absolute(&frame.file).display()
             );
         }
         // The concat demuxer ignores the duration of the last entry unless it is repeated.
         if let Some(last) = frames.last() {
-            let _ = writeln!(script, "file '{}'", Self::absolute(&last.file).display());
+            let _ = writeln!(
+                script,
+                "file '{}'\noption framerate {CONCAT_INPUT_FRAMERATE}",
+                Self::absolute(&last.file).display()
+            );
         }
         script
     }
@@ -145,5 +151,89 @@ mod tests {
         let expected =
             std::path::absolute(std::env::current_dir().unwrap().join(RELATIVE_FRAME)).unwrap();
         assert!(list.contains(&format!("file '{}'", expected.display())));
+    }
+
+    #[test]
+    fn encoding_preserves_sixteen_millisecond_frame_timestamps() {
+        use std::{
+            fs,
+            process::Command,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        if Command::new("ffmpeg").arg("-version").output().is_err()
+            || Command::new("ffprobe").arg("-version").output().is_err()
+        {
+            return;
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "rupicola-frame-timing-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let frames: Vec<_> = (0_u8..4)
+            .map(|index| {
+                let file = dir.join(format!("frame-{index}.ppm"));
+                let mut ppm = b"P6\n2 2\n255\n".to_vec();
+                for _ in 0..4 {
+                    ppm.extend_from_slice(&[index * 60, 0, 0]);
+                }
+                fs::write(&file, ppm).unwrap();
+                Frame {
+                    file,
+                    ms: f64::from(index) * 16.0,
+                }
+            })
+            .collect();
+        let list = dir.join(FRAME_LIST);
+        let mp4 = dir.join("clip.mp4");
+        fs::write(&list, Encoder::frame_list(&frames)).unwrap();
+
+        let status = Encoder::command(&list, &mp4).status().unwrap();
+        assert!(status.success(), "ffmpeg exited with {status}");
+
+        let probe = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "frame=best_effort_timestamp_time",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&mp4)
+            .output()
+            .unwrap();
+        assert!(
+            probe.status.success(),
+            "ffprobe failed: {}",
+            String::from_utf8_lossy(&probe.stderr)
+        );
+        let timestamps: Vec<f64> = String::from_utf8(probe.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| line.split(',').next().unwrap().parse().unwrap())
+            .collect();
+        assert!(
+            timestamps.len() >= frames.len(),
+            "expected all source frames, got {}",
+            timestamps.len()
+        );
+        for pair in timestamps.windows(2).take(frames.len() - 1) {
+            let interval = pair[1] - pair[0];
+            assert!(
+                (interval - 0.016).abs() <= 0.001,
+                "expected 16 ms PTS spacing, got {interval:.3} s"
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 }
