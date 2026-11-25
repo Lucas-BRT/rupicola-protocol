@@ -59,6 +59,8 @@ pub(crate) mod flavour {
     const SETTLE_STABLE_FRAMES: u32 = 3;
     #[cfg(unix)]
     const SETTLE_LIMIT_MS: u64 = 600;
+    #[cfg(unix)]
+    const VIEW_TRANSITION_SETTLE_LIMIT_MS: u64 = 1500;
     /// Milliseconds a step may take when the plan names no limit.
     #[cfg(unix)]
     const DEFAULT_TIMEOUT_MS: u64 = 10_000;
@@ -68,7 +70,7 @@ pub(crate) mod flavour {
     const PROFILE_REMOVE_ATTEMPTS: u32 = 20;
     #[cfg(unix)]
     const PROFILE_REMOVE_RETRY_MS: u64 = 100;
-    /// Milliseconds between frames sampled during a `WaitMs` action while recording.
+    /// Default minimum interval between recorded compositor frames.
     #[cfg(unix)]
     const RECORDING_STEP_MS: u64 = 40;
 
@@ -148,6 +150,10 @@ pub(crate) mod flavour {
                 timeout_ms: environment.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
                 settle_ms: environment.settle_ms.unwrap_or(0),
                 network_policy: environment.network_policy,
+                frame_interval_ms: environment
+                    .frame_interval_ms
+                    .unwrap_or(RECORDING_STEP_MS)
+                    .max(1),
                 recording: None,
             };
             if let Err(error) = session.open(&target.command, environment).await {
@@ -158,11 +164,13 @@ pub(crate) mod flavour {
         }
     }
 
-    /// State of an active frame-sampled clip recording.
+    /// State of an active compositor-frame recording.
     #[cfg(unix)]
     struct Recording {
         dir: PathBuf,
         started: Instant,
+        browser_started: Option<f64>,
+        last_frame_at: Option<Instant>,
         frames: Vec<Frame>,
     }
 
@@ -181,6 +189,7 @@ pub(crate) mod flavour {
         timeout_ms: u64,
         settle_ms: u64,
         network_policy: NetworkPolicy,
+        frame_interval_ms: u64,
         recording: Option<Recording>,
     }
 
@@ -229,6 +238,10 @@ pub(crate) mod flavour {
                 let reply: Value = serde_json::from_slice(&raw).map_err(|e| {
                     CaptureError::environment(format!("read from the browser: {e}"))
                 })?;
+                if reply.get("method").and_then(Value::as_str) == Some("Page.screencastFrame") {
+                    self.record_screencast_frame(&reply).await?;
+                    continue;
+                }
                 if self.network_policy == NetworkPolicy::PublicOnly
                     && reply.get("method").and_then(Value::as_str) == Some("Fetch.requestPaused")
                     && let Some(req_id) = reply.pointer("/params/requestId").and_then(Value::as_str)
@@ -274,6 +287,63 @@ pub(crate) mod flavour {
                 }
                 return Ok(reply.get("result").cloned().unwrap_or(Value::Null));
             }
+        }
+
+        /// Acknowledges compositor frames promptly and stores them at the requested rate.
+        async fn record_screencast_frame(&mut self, event: &Value) -> Result<(), CaptureError> {
+            let params = event.get("params").unwrap_or(&Value::Null);
+            let frame_interval = Duration::from_millis(self.frame_interval_ms);
+            if let Some(session_id) = params.get("sessionId").and_then(Value::as_u64) {
+                self.send_only(
+                    true,
+                    "Page.screencastFrameAck",
+                    json!({ "sessionId": session_id }),
+                )
+                .await
+                .map(|_| ())?;
+            }
+
+            let Some(recording) = self.recording.as_mut() else {
+                return Ok(());
+            };
+            if recording
+                .last_frame_at
+                .is_some_and(|last| last.elapsed() < frame_interval)
+            {
+                return Ok(());
+            }
+            let data = params
+                .get("data")
+                .and_then(Value::as_str)
+                .and_then(crate::backend::base64::decode)
+                .filter(|bytes| !bytes.is_empty())
+                .ok_or_else(|| {
+                    CaptureError::target("the browser sent an empty screencast frame")
+                })?;
+            let timestamp = params
+                .pointer("/metadata/timestamp")
+                .and_then(Value::as_f64);
+            let elapsed_ms = if let Some(timestamp) = timestamp {
+                let started = *recording.browser_started.get_or_insert(timestamp);
+                (timestamp - started).max(0.0) * 1000.0
+            } else {
+                recording.started.elapsed().as_secs_f64() * 1000.0
+            };
+            let path = recording
+                .dir
+                .join(format!("frame-{:05}.jpg", recording.frames.len()));
+            Runtime::write(&path, &data).await.map_err(|error| {
+                CaptureError::environment(format!(
+                    "write screencast frame {}: {error}",
+                    path.display()
+                ))
+            })?;
+            recording.frames.push(Frame {
+                file: path,
+                ms: elapsed_ms,
+            });
+            recording.last_frame_at = Some(Instant::now());
+            Ok(())
         }
 
         /// Runs `expression` in the page and returns its value, optionally awaiting promises.
@@ -323,7 +393,7 @@ pub(crate) mod flavour {
                 format!("{PAGE_HELPERS_JS}\ncdpSettle({SETTLE_STABLE_FRAMES}, {SETTLE_LIMIT_MS})");
             self.evaluate_raw(&expr, true).await?;
             if self.settle_ms > 0 {
-                Runtime::sleep(self.settle_ms).await;
+                self.wait_ms(self.settle_ms).await?;
             }
             Ok(())
         }
@@ -331,6 +401,10 @@ pub(crate) mod flavour {
         async fn target_center(&mut self, target_id: &str) -> Result<(f64, f64), CaptureError> {
             let arg = serde_json::to_string(target_id)
                 .map_err(|e| CaptureError::environment(e.to_string()))?;
+            let transition_wait = format!(
+                "{PAGE_HELPERS_JS}\ncdpWaitForViewTransition({VIEW_TRANSITION_SETTLE_LIMIT_MS})"
+            );
+            self.evaluate_raw(&transition_wait, true).await?;
             let val = self.helper(&format!("cdpCenter({arg})")).await?;
             let x = val.get("x").and_then(Value::as_f64);
             let y = val.get("y").and_then(Value::as_f64);
@@ -546,58 +620,20 @@ pub(crate) mod flavour {
             Ok(DomTree::finish(tree))
         }
 
-        /// Captures one PNG screenshot into `png`.
-        async fn capture_png(&mut self, png: &Path, full_page: bool) -> Result<(), CaptureError> {
-            let params = if full_page {
-                json!({ "format": "png", "captureBeyondViewport": true })
-            } else {
-                json!({ "format": "png" })
-            };
-            let shot = self.request(true, "Page.captureScreenshot", params).await?;
-            let data = shot
-                .get("data")
-                .and_then(Value::as_str)
-                .and_then(crate::backend::base64::decode)
-                .filter(|bytes| !bytes.is_empty())
-                .ok_or_else(|| CaptureError::target("the browser sent no screenshot"))?;
-            Runtime::write(png, &data)
-                .await
-                .map_err(|e| CaptureError::environment(format!("write {}: {e}", png.display())))
-        }
-
-        /// Captures one frame into the active recording, if any.
-        async fn sample_recording_frame(&mut self) -> Result<(), CaptureError> {
-            let Some((frame_path, elapsed_ms)) = self.recording.as_ref().map(|rec| {
-                let index = rec.frames.len();
-                (
-                    rec.dir.join(format!("frame-{index:05}.png")),
-                    rec.started.elapsed().as_secs_f64() * 1000.0,
-                )
-            }) else {
-                return Ok(());
-            };
-            self.capture_png(&frame_path, false).await?;
-            if let Some(rec) = self.recording.as_mut() {
-                rec.frames.push(Frame {
-                    file: frame_path,
-                    ms: elapsed_ms,
-                });
-            }
-            Ok(())
-        }
-
-        /// Waits for `ms` milliseconds, sampling frames when a clip recording is active.
+        /// Waits while servicing CDP so screencast frames are acknowledged throughout the wait.
         async fn wait_ms(&mut self, ms: u64) -> Result<(), CaptureError> {
             if self.recording.is_none() {
                 Runtime::sleep(ms).await;
                 return Ok(());
             }
-            let mut remaining = ms;
-            while remaining > 0 {
-                let step = remaining.min(RECORDING_STEP_MS);
-                Runtime::sleep(step).await;
-                self.sample_recording_frame().await?;
-                remaining -= step;
+            let started = Instant::now();
+            let duration = Duration::from_millis(ms);
+            while started.elapsed() < duration {
+                let remaining = duration.saturating_sub(started.elapsed());
+                let step = remaining.min(Duration::from_millis(self.frame_interval_ms));
+                Runtime::sleep(u64::try_from(step.as_millis()).unwrap_or(u64::MAX)).await;
+                self.request(true, "Runtime.evaluate", json!({"expression": "void 0"}))
+                    .await?;
             }
             Ok(())
         }
@@ -719,18 +755,12 @@ pub(crate) mod flavour {
                 }
             }
             self.settle().await?;
-            if self.recording.is_some() {
-                self.sample_recording_frame().await?;
-            }
             Ok(())
         }
 
         async fn wait_for(&mut self, condition: &WaitCondition) -> Result<(), CaptureError> {
             match condition {
-                WaitCondition::Delay { ms } => {
-                    Runtime::sleep(*ms).await;
-                    Ok(())
-                }
+                WaitCondition::Delay { ms } => self.wait_ms(*ms).await,
                 WaitCondition::Visible { target_id } => {
                     let target = serde_json::to_string(target_id)
                         .map_err(|e| CaptureError::environment(e.to_string()))?;
@@ -769,16 +799,33 @@ pub(crate) mod flavour {
             self.recording = Some(Recording {
                 dir,
                 started: Instant::now(),
+                browser_started: None,
+                last_frame_at: None,
                 frames: Vec::new(),
             });
-            self.sample_recording_frame().await
+            if let Err(error) = self
+                .request(
+                    true,
+                    "Page.startScreencast",
+                    json!({
+                        "format": "jpeg",
+                        "quality": 90,
+                        "everyNthFrame": 1,
+                    }),
+                )
+                .await
+            {
+                self.recording = None;
+                return Err(error);
+            }
+            Ok(())
         }
 
         async fn stop_recording(&mut self, id: &str) -> Result<Clip, CaptureError> {
             if self.recording.is_none() {
                 return Err(CaptureError::environment("no recording is running"));
             }
-            let _ = self.sample_recording_frame().await;
+            self.request(true, "Page.stopScreencast", json!({})).await?;
             let rec = self
                 .recording
                 .take()
