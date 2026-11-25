@@ -14,12 +14,16 @@ const SHELL: &str = "sh";
 #[cfg(unix)]
 const PIPE_SCRIPT: &str = r#"exec "$0" "$@" 3<&0 4>&1 0</dev/null 1>/dev/null"#;
 
+/// Environment variables checked before scanning `PATH` for a Chromium-family browser.
+pub(crate) const CHROMIUM_ENV_VARS: [&str; 2] = ["RUPICOLA_CHROMIUM_BIN", "CHROME_BIN"];
+
 /// Chromium-family programs tried, in order, when looking for a browser.
-pub(crate) const BROWSER_CANDIDATES: [&str; 9] = [
+pub(crate) const BROWSER_CANDIDATES: [&str; 10] = [
     "chromium",
     "chromium-browser",
     "google-chrome",
     "google-chrome-stable",
+    "chrome",
     "brave",
     "brave-browser",
     "microsoft-edge",
@@ -41,6 +45,16 @@ pub struct CdpBackend {
 }
 
 impl CdpBackend {
+    /// Returns the first non-empty browser path configured via `RUPICOLA_CHROMIUM_BIN` or `CHROME_BIN`.
+    #[must_use]
+    pub(crate) fn env_browser_bin() -> Option<PathBuf> {
+        CHROMIUM_ENV_VARS
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .find(|value| !value.is_empty())
+            .map(PathBuf::from)
+    }
+
     /// Creates a CDP backend targeting `browser_bin` with Chromium's sandbox enabled.
     #[must_use]
     pub fn new(browser_bin: impl Into<PathBuf>) -> Self {

@@ -20,7 +20,13 @@ pub(crate) mod flavour {
     use crate::backend::cdp::PAGE_HELPERS_JS;
     #[cfg(unix)]
     use crate::backend::dom_tree::{DOM_SNAPSHOT_JS, DomTree};
+    #[cfg(unix)]
+    use crate::backend::messages::NO_FRAMES;
     use crate::backend::tool::Tool;
+    #[cfg(unix)]
+    use crate::backend::web::{Encoder, FRAME_LIST, FRAMES_DIR};
+    #[cfg(unix)]
+    use crate::backend::web_driver::Frame;
     #[cfg(unix)]
     use crate::common::rt::Child;
     use crate::common::rt::Runtime;
@@ -62,17 +68,25 @@ pub(crate) mod flavour {
     const PROFILE_REMOVE_ATTEMPTS: u32 = 20;
     #[cfg(unix)]
     const PROFILE_REMOVE_RETRY_MS: u64 = 100;
+    /// Milliseconds between frames sampled during a `WaitMs` action while recording.
+    #[cfg(unix)]
+    const RECORDING_STEP_MS: u64 = 40;
 
     /// Finds a Chromium-family browser.
     #[cfg_attr(feature = "async", async_trait::async_trait)]
     pub trait CdpDiscovery: Sized {
-        /// Discovers a Chromium-family browser binary in `PATH`.
+        /// Discovers a Chromium-family browser binary via env override or `PATH`.
         async fn discover() -> Option<Self>;
     }
 
     #[cfg_attr(feature = "async", async_trait::async_trait)]
     impl CdpDiscovery for CdpBackend {
         async fn discover() -> Option<Self> {
+            if let Some(env_bin) = Self::env_browser_bin()
+                && Runtime::is_file(&env_bin).await
+            {
+                return Some(Self::new(env_bin));
+            }
             for candidate in BROWSER_CANDIDATES {
                 if Runtime::is_available(Tool(candidate)).await {
                     return Some(Self::new(candidate));
@@ -93,6 +107,7 @@ pub(crate) mod flavour {
             Capabilities::of(&[
                 Capability::Actions,
                 Capability::UiTree,
+                Capability::Video,
                 Capability::ColorScheme,
                 Capability::Scale,
                 Capability::FullPage,
@@ -133,6 +148,7 @@ pub(crate) mod flavour {
                 timeout_ms: environment.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
                 settle_ms: environment.settle_ms.unwrap_or(0),
                 network_policy: environment.network_policy,
+                recording: None,
             };
             if let Err(error) = session.open(&target.command, environment).await {
                 let _ = Box::new(session).finish().await;
@@ -140,6 +156,14 @@ pub(crate) mod flavour {
             }
             Ok(Box::new(session))
         }
+    }
+
+    /// State of an active frame-sampled clip recording.
+    #[cfg(unix)]
+    struct Recording {
+        dir: PathBuf,
+        started: Instant,
+        frames: Vec<Frame>,
     }
 
     /// One page of a headless browser, driven over the Chrome `DevTools` Protocol.
@@ -157,6 +181,7 @@ pub(crate) mod flavour {
         timeout_ms: u64,
         settle_ms: u64,
         network_policy: NetworkPolicy,
+        recording: Option<Recording>,
     }
 
     #[cfg(unix)]
@@ -521,10 +546,77 @@ pub(crate) mod flavour {
             Ok(DomTree::finish(tree))
         }
 
-        fn unsupported() -> CaptureError {
-            CaptureError::environment(
-                "this backend cannot act on the page by element or record it: only wait-ms is supported",
-            )
+        /// Captures one PNG screenshot into `png`.
+        async fn capture_png(&mut self, png: &Path, full_page: bool) -> Result<(), CaptureError> {
+            let params = if full_page {
+                json!({ "format": "png", "captureBeyondViewport": true })
+            } else {
+                json!({ "format": "png" })
+            };
+            let shot = self.request(true, "Page.captureScreenshot", params).await?;
+            let data = shot
+                .get("data")
+                .and_then(Value::as_str)
+                .and_then(crate::backend::base64::decode)
+                .filter(|bytes| !bytes.is_empty())
+                .ok_or_else(|| CaptureError::target("the browser sent no screenshot"))?;
+            Runtime::write(png, &data)
+                .await
+                .map_err(|e| CaptureError::environment(format!("write {}: {e}", png.display())))
+        }
+
+        /// Captures one frame into the active recording, if any.
+        async fn sample_recording_frame(&mut self) -> Result<(), CaptureError> {
+            let Some((frame_path, elapsed_ms)) = self.recording.as_ref().map(|rec| {
+                let index = rec.frames.len();
+                (
+                    rec.dir.join(format!("frame-{index:05}.png")),
+                    rec.started.elapsed().as_secs_f64() * 1000.0,
+                )
+            }) else {
+                return Ok(());
+            };
+            self.capture_png(&frame_path, false).await?;
+            if let Some(rec) = self.recording.as_mut() {
+                rec.frames.push(Frame {
+                    file: frame_path,
+                    ms: elapsed_ms,
+                });
+            }
+            Ok(())
+        }
+
+        /// Waits for `ms` milliseconds, sampling frames when a clip recording is active.
+        async fn wait_ms(&mut self, ms: u64) -> Result<(), CaptureError> {
+            if self.recording.is_none() {
+                Runtime::sleep(ms).await;
+                return Ok(());
+            }
+            let mut remaining = ms;
+            while remaining > 0 {
+                let step = remaining.min(RECORDING_STEP_MS);
+                Runtime::sleep(step).await;
+                self.sample_recording_frame().await?;
+                remaining -= step;
+            }
+            Ok(())
+        }
+
+        /// Encodes `frames` into `mp4`, holding each until the next was taken.
+        async fn encode(frames: &[Frame], mp4: &Path, list: &Path) -> Result<(), CaptureError> {
+            Runtime::write(list, Encoder::frame_list(frames).as_bytes())
+                .await
+                .map_err(|e| CaptureError::environment(format!("write the frame list: {e}")))?;
+            let status = Runtime::status(Encoder::command(list, mp4))
+                .await
+                .map_err(|e| CaptureError::environment(format!("run ffmpeg: {e}")))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(CaptureError::environment(format!(
+                    "ffmpeg exited with {status}"
+                )))
+            }
         }
     }
 
@@ -534,8 +626,7 @@ pub(crate) mod flavour {
         async fn perform(&mut self, action: &UiAction) -> Result<(), CaptureError> {
             match action {
                 UiAction::WaitMs { ms } => {
-                    Runtime::sleep(*ms).await;
-                    return Ok(());
+                    return self.wait_ms(*ms).await;
                 }
                 UiAction::Click { target_id } => {
                     let (x, y) = self.target_center(target_id).await?;
@@ -627,7 +718,11 @@ pub(crate) mod flavour {
                         .await?;
                 }
             }
-            self.settle().await
+            self.settle().await?;
+            if self.recording.is_some() {
+                self.sample_recording_frame().await?;
+            }
+            Ok(())
         }
 
         async fn wait_for(&mut self, condition: &WaitCondition) -> Result<(), CaptureError> {
@@ -666,11 +761,41 @@ pub(crate) mod flavour {
         }
 
         async fn start_recording(&mut self) -> Result<(), CaptureError> {
-            Err(Self::unsupported())
+            let dir = self.artifacts.file(FRAMES_DIR);
+            let _ = Runtime::remove_dir_all(&dir).await;
+            Runtime::create_dir_all(&dir)
+                .await
+                .map_err(|e| CaptureError::environment(format!("create {}: {e}", dir.display())))?;
+            self.recording = Some(Recording {
+                dir,
+                started: Instant::now(),
+                frames: Vec::new(),
+            });
+            self.sample_recording_frame().await
         }
 
-        async fn stop_recording(&mut self, _id: &str) -> Result<Clip, CaptureError> {
-            Err(Self::unsupported())
+        async fn stop_recording(&mut self, id: &str) -> Result<Clip, CaptureError> {
+            if self.recording.is_none() {
+                return Err(CaptureError::environment("no recording is running"));
+            }
+            let _ = self.sample_recording_frame().await;
+            let rec = self
+                .recording
+                .take()
+                .ok_or_else(|| CaptureError::environment("no recording is running"))?;
+            let mp4 = self.artifacts.mp4(id)?;
+            if rec.frames.is_empty() {
+                let _ = Runtime::remove_dir_all(&rec.dir).await;
+                return Err(CaptureError::target(NO_FRAMES));
+            }
+            let list = rec.dir.join(FRAME_LIST);
+            let encoded = Self::encode(&rec.frames, &mp4, &list).await;
+            let _ = Runtime::remove_dir_all(&rec.dir).await;
+            encoded?;
+            Ok(Clip {
+                id: id.to_owned(),
+                mp4,
+            })
         }
 
         async fn finish(mut self: Box<Self>) -> Result<(), CaptureError> {
