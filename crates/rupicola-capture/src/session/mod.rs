@@ -176,9 +176,104 @@ pub struct Checkpoint {
     pub snapshot: Option<UiSnapshot>,
 }
 
+/// Minimum ratio of effective FPS to requested FPS before emitting a low-FPS warning.
+const LOW_FPS_WARNING_RATIO: f64 = 0.75;
+
+/// Measured frame cadence and rate telemetry for a recorded [`Clip`].
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ClipTelemetry {
+    /// Total raw compositor or screencast frame events received from the backend.
+    pub raw_frames: usize,
+    /// Raw frame events dropped by capture-side rate throttling.
+    pub dropped_frames: usize,
+    /// Frames written and encoded into the clip.
+    pub encoded_frames: usize,
+    /// Total recording duration in milliseconds.
+    pub duration_ms: f64,
+    /// Effective encoded frame rate (`encoded_frames / (duration_ms / 1000.0)`).
+    pub effective_fps: f64,
+    /// Requested target frame rate (`1000.0 / frame_interval_ms`), when configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_fps: Option<f64>,
+    /// Maximum gap between consecutive raw frame timestamps in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_raw_gap_ms: Option<f64>,
+}
+
 /// One recorded walkthrough.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Clip {
     pub id: String,
     pub mp4: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<ClipTelemetry>,
+}
+
+impl Clip {
+    /// Returns a warning if measured [`ClipTelemetry`] fell significantly below the requested FPS.
+    #[must_use]
+    pub fn low_fps_warning(&self) -> Option<String> {
+        let telemetry = self.telemetry.as_ref()?;
+        let requested = telemetry.requested_fps?;
+        if requested <= 0.0 || telemetry.duration_ms <= 0.0 {
+            return None;
+        }
+        if telemetry.effective_fps < requested * LOW_FPS_WARNING_RATIO {
+            let gap_note = telemetry
+                .max_raw_gap_ms
+                .map_or_else(String::new, |gap| format!(", max raw gap {gap:.0} ms"));
+            return Some(format!(
+                "clip '{}' recorded {:.1} fps ({} encoded, {} raw, {} dropped over {:.0} ms{gap_note}), below requested {:.1} fps",
+                self.id,
+                telemetry.effective_fps,
+                telemetry.encoded_frames,
+                telemetry.raw_frames,
+                telemetry.dropped_frames,
+                telemetry.duration_ms,
+                requested,
+            ));
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn low_fps_warning_triggers_only_below_threshold() {
+        let low = Clip {
+            id: "slow".to_owned(),
+            mp4: PathBuf::from("slow.mp4"),
+            telemetry: Some(ClipTelemetry {
+                raw_frames: 17,
+                dropped_frames: 0,
+                encoded_frames: 17,
+                duration_ms: 1284.0,
+                effective_fps: 13.24,
+                requested_fps: Some(62.5),
+                max_raw_gap_ms: Some(650.0),
+            }),
+        };
+        let warning = low.low_fps_warning().expect("expected low-fps warning");
+        assert!(warning.contains("13.2 fps"));
+        assert!(warning.contains("62.5 fps"));
+        assert!(warning.contains("max raw gap 650 ms"));
+
+        let ok = Clip {
+            id: "fast".to_owned(),
+            mp4: PathBuf::from("fast.mp4"),
+            telemetry: Some(ClipTelemetry {
+                raw_frames: 50,
+                dropped_frames: 0,
+                encoded_frames: 50,
+                duration_ms: 1000.0,
+                effective_fps: 50.0,
+                requested_fps: Some(62.5),
+                max_raw_gap_ms: Some(17.0),
+            }),
+        };
+        assert_eq!(ok.low_fps_warning(), None);
+    }
 }

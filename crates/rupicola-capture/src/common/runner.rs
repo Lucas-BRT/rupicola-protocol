@@ -57,7 +57,13 @@ pub(crate) mod flavour {
                     bundle.checkpoints.push(checkpoint);
                 }
                 Step::StartRecording => session.start_recording().await?,
-                Step::StopRecording { id } => bundle.clips.push(session.stop_recording(id).await?),
+                Step::StopRecording { id } => {
+                    let clip = session.stop_recording(id).await?;
+                    if let Some(warning) = clip.low_fps_warning() {
+                        bundle.warnings.push(warning);
+                    }
+                    bundle.clips.push(clip);
+                }
             }
         }
         Ok(())

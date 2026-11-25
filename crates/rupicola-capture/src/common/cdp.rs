@@ -27,10 +27,12 @@ pub(crate) mod flavour {
     use crate::backend::web::{Encoder, FRAME_LIST, FRAMES_DIR};
     #[cfg(unix)]
     use crate::backend::web_driver::Frame;
-    #[cfg(unix)]
-    use crate::common::rt::Child;
     use crate::common::rt::Runtime;
+    #[cfg(unix)]
+    use crate::common::rt::{Child, ReadMessage};
     use crate::common::traits::flavour::{CaptureBackend, CaptureSession};
+    #[cfg(unix)]
+    use crate::session::ClipTelemetry;
     use crate::session::{
         Capabilities, CaptureError, Checkpoint, Clip, Environment, NetworkPolicy, Target,
         WaitCondition,
@@ -73,6 +75,13 @@ pub(crate) mod flavour {
     /// Default minimum interval between recorded compositor frames.
     #[cfg(unix)]
     const RECORDING_STEP_MS: u64 = 40;
+    /// Tolerance when comparing compositor frame deltas against `frame_interval_ms` so 60 Hz
+    /// vsync jitter does not drop every other frame.
+    #[cfg(unix)]
+    const FRAME_INTERVAL_TOLERANCE_MS: f64 = 1.0;
+    /// Milliseconds per second.
+    #[cfg(unix)]
+    const MS_PER_SECOND: f64 = 1000.0;
 
     /// Finds a Chromium-family browser.
     #[cfg_attr(feature = "async", async_trait::async_trait)]
@@ -170,7 +179,11 @@ pub(crate) mod flavour {
         dir: PathBuf,
         started: Instant,
         browser_started: Option<f64>,
-        last_frame_at: Option<Instant>,
+        last_kept_ms: Option<f64>,
+        last_raw_ms: Option<f64>,
+        max_raw_gap_ms: Option<f64>,
+        raw_frames: usize,
+        dropped_frames: usize,
         frames: Vec<Frame>,
     }
 
@@ -219,6 +232,58 @@ pub(crate) mod flavour {
             Ok(id)
         }
 
+        /// Processes one raw CDP message, dispatching async events and returning the JSON reply
+        /// when its `id` matches `expected_id`.
+        async fn handle_incoming(
+            &mut self,
+            raw: &[u8],
+            expected_id: Option<u64>,
+        ) -> Result<Option<Value>, CaptureError> {
+            let reply: Value = serde_json::from_slice(raw)
+                .map_err(|e| CaptureError::environment(format!("read from the browser: {e}")))?;
+            if reply.get("method").and_then(Value::as_str) == Some("Page.screencastFrame") {
+                self.record_screencast_frame(&reply).await?;
+                return Ok(None);
+            }
+            if self.network_policy == NetworkPolicy::PublicOnly
+                && reply.get("method").and_then(Value::as_str) == Some("Fetch.requestPaused")
+                && let Some(req_id) = reply.pointer("/params/requestId").and_then(Value::as_str)
+            {
+                let req_url = reply
+                    .pointer("/params/request/url")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let allowed = crate::common::network::flavour::check_network_url(
+                    NetworkPolicy::PublicOnly,
+                    req_url,
+                )
+                .await
+                .is_ok();
+                if allowed {
+                    let _ = self
+                        .send_only(
+                            true,
+                            "Fetch.continueRequest",
+                            json!({ "requestId": req_id }),
+                        )
+                        .await;
+                } else {
+                    let _ = self
+                        .send_only(
+                            true,
+                            "Fetch.failRequest",
+                            json!({ "requestId": req_id, "errorReason": "BlockedByClient" }),
+                        )
+                        .await;
+                }
+                return Ok(None);
+            }
+            if expected_id.is_some_and(|id| reply.get("id").and_then(Value::as_u64) == Some(id)) {
+                return Ok(Some(reply));
+            }
+            Ok(None)
+        }
+
         /// Sends a command and waits for its reply. Events, and replies to anything else,
         /// are read past. `to_page` aims the command at the page instead of the browser.
         async fn request(
@@ -235,49 +300,10 @@ pub(crate) mod flavour {
                     .await
                     .map_err(|e| CaptureError::environment(format!("read from the browser: {e}")))?
                     .ok_or_else(|| CaptureError::environment("the browser exited"))?;
-                let reply: Value = serde_json::from_slice(&raw).map_err(|e| {
-                    CaptureError::environment(format!("read from the browser: {e}"))
-                })?;
-                if reply.get("method").and_then(Value::as_str) == Some("Page.screencastFrame") {
-                    self.record_screencast_frame(&reply).await?;
+                let maybe_reply = self.handle_incoming(&raw, Some(id)).await?;
+                let Some(reply) = maybe_reply else {
                     continue;
-                }
-                if self.network_policy == NetworkPolicy::PublicOnly
-                    && reply.get("method").and_then(Value::as_str) == Some("Fetch.requestPaused")
-                    && let Some(req_id) = reply.pointer("/params/requestId").and_then(Value::as_str)
-                {
-                    let req_url = reply
-                        .pointer("/params/request/url")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let allowed = crate::common::network::flavour::check_network_url(
-                        NetworkPolicy::PublicOnly,
-                        req_url,
-                    )
-                    .await
-                    .is_ok();
-                    if allowed {
-                        let _ = self
-                            .send_only(
-                                true,
-                                "Fetch.continueRequest",
-                                json!({ "requestId": req_id }),
-                            )
-                            .await;
-                    } else {
-                        let _ = self
-                            .send_only(
-                                true,
-                                "Fetch.failRequest",
-                                json!({ "requestId": req_id, "errorReason": "BlockedByClient" }),
-                            )
-                            .await;
-                    }
-                    continue;
-                }
-                if reply.get("id").and_then(Value::as_u64) != Some(id) {
-                    continue;
-                }
+                };
                 if let Some(error) = reply.get("error") {
                     let said = error
                         .get("message")
@@ -292,7 +318,6 @@ pub(crate) mod flavour {
         /// Acknowledges compositor frames promptly and stores them at the requested rate.
         async fn record_screencast_frame(&mut self, event: &Value) -> Result<(), CaptureError> {
             let params = event.get("params").unwrap_or(&Value::Null);
-            let frame_interval = Duration::from_millis(self.frame_interval_ms);
             if let Some(session_id) = params.get("sessionId").and_then(Value::as_u64) {
                 self.send_only(
                     true,
@@ -303,15 +328,37 @@ pub(crate) mod flavour {
                 .map(|_| ())?;
             }
 
+            let arrival = Instant::now();
             let Some(recording) = self.recording.as_mut() else {
                 return Ok(());
             };
-            if recording
-                .last_frame_at
-                .is_some_and(|last| last.elapsed() < frame_interval)
-            {
+            recording.raw_frames += 1;
+
+            let timestamp = params
+                .pointer("/metadata/timestamp")
+                .and_then(Value::as_f64);
+            let elapsed_ms = if let Some(timestamp) = timestamp {
+                let started = *recording.browser_started.get_or_insert(timestamp);
+                (timestamp - started).max(0.0) * MS_PER_SECOND
+            } else {
+                arrival.duration_since(recording.started).as_secs_f64() * MS_PER_SECOND
+            };
+            if let Some(prev_raw_ms) = recording.last_raw_ms {
+                let gap = (elapsed_ms - prev_raw_ms).max(0.0);
+                recording.max_raw_gap_ms =
+                    Some(recording.max_raw_gap_ms.map_or(gap, |max| max.max(gap)));
+            }
+            recording.last_raw_ms = Some(elapsed_ms);
+
+            #[allow(clippy::cast_precision_loss)]
+            let min_interval_ms = self.frame_interval_ms as f64;
+            if recording.last_kept_ms.is_some_and(|last| {
+                (elapsed_ms - last) + FRAME_INTERVAL_TOLERANCE_MS < min_interval_ms
+            }) {
+                recording.dropped_frames += 1;
                 return Ok(());
             }
+
             let data = params
                 .get("data")
                 .and_then(Value::as_str)
@@ -320,15 +367,6 @@ pub(crate) mod flavour {
                 .ok_or_else(|| {
                     CaptureError::target("the browser sent an empty screencast frame")
                 })?;
-            let timestamp = params
-                .pointer("/metadata/timestamp")
-                .and_then(Value::as_f64);
-            let elapsed_ms = if let Some(timestamp) = timestamp {
-                let started = *recording.browser_started.get_or_insert(timestamp);
-                (timestamp - started).max(0.0) * 1000.0
-            } else {
-                recording.started.elapsed().as_secs_f64() * 1000.0
-            };
             let path = recording
                 .dir
                 .join(format!("frame-{:05}.jpg", recording.frames.len()));
@@ -342,7 +380,7 @@ pub(crate) mod flavour {
                 file: path,
                 ms: elapsed_ms,
             });
-            recording.last_frame_at = Some(Instant::now());
+            recording.last_kept_ms = Some(elapsed_ms);
             Ok(())
         }
 
@@ -620,20 +658,47 @@ pub(crate) mod flavour {
             Ok(DomTree::finish(tree))
         }
 
-        /// Waits while servicing CDP so screencast frames are acknowledged throughout the wait.
+        #[maybe_async_cfg::only_if(sync)]
+        fn on_wait_timeout(&mut self) -> Result<(), CaptureError> {
+            self.request(true, "Runtime.evaluate", json!({"expression": "void 0"}))
+                .map(|_| ())
+        }
+
+        #[maybe_async_cfg::only_if(async)]
+        #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
+        async fn on_wait_timeout(&mut self) -> Result<(), CaptureError> {
+            Ok(())
+        }
+
+        /// Waits while servicing CDP so screencast frames are acknowledged immediately on arrival.
         async fn wait_ms(&mut self, ms: u64) -> Result<(), CaptureError> {
             if self.recording.is_none() {
                 Runtime::sleep(ms).await;
                 return Ok(());
             }
-            let started = Instant::now();
-            let duration = Duration::from_millis(ms);
-            while started.elapsed() < duration {
-                let remaining = duration.saturating_sub(started.elapsed());
-                let step = remaining.min(Duration::from_millis(self.frame_interval_ms));
-                Runtime::sleep(u64::try_from(step.as_millis()).unwrap_or(u64::MAX)).await;
-                self.request(true, "Runtime.evaluate", json!({"expression": "void 0"}))
-                    .await?;
+            let deadline = Instant::now() + Duration::from_millis(ms);
+            loop {
+                let now = Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                let remaining = deadline.saturating_duration_since(now);
+                match self
+                    .child
+                    .read_message_timeout(MESSAGE_END, remaining)
+                    .await
+                    .map_err(|e| CaptureError::environment(format!("read from the browser: {e}")))?
+                {
+                    ReadMessage::Message(raw) => {
+                        let _ = self.handle_incoming(&raw, None).await?;
+                    }
+                    ReadMessage::Timeout => {
+                        self.on_wait_timeout().await?;
+                    }
+                    ReadMessage::Eof => {
+                        return Err(CaptureError::environment("the browser exited"));
+                    }
+                }
             }
             Ok(())
         }
@@ -800,7 +865,11 @@ pub(crate) mod flavour {
                 dir,
                 started: Instant::now(),
                 browser_started: None,
-                last_frame_at: None,
+                last_kept_ms: None,
+                last_raw_ms: None,
+                max_raw_gap_ms: None,
+                raw_frames: 0,
+                dropped_frames: 0,
                 frames: Vec::new(),
             });
             if let Err(error) = self
@@ -835,13 +904,33 @@ pub(crate) mod flavour {
                 let _ = Runtime::remove_dir_all(&rec.dir).await;
                 return Err(CaptureError::target(NO_FRAMES));
             }
+            let duration_ms = rec.started.elapsed().as_secs_f64() * MS_PER_SECOND;
             let list = rec.dir.join(FRAME_LIST);
             let encoded = Self::encode(&rec.frames, &mp4, &list).await;
             let _ = Runtime::remove_dir_all(&rec.dir).await;
             encoded?;
+            #[allow(clippy::cast_precision_loss)]
+            let encoded_frames = rec.frames.len();
+            #[allow(clippy::cast_precision_loss)]
+            let effective_fps = if duration_ms > 0.0 {
+                encoded_frames as f64 / (duration_ms / MS_PER_SECOND)
+            } else {
+                0.0
+            };
+            #[allow(clippy::cast_precision_loss)]
+            let requested_fps = Some(MS_PER_SECOND / self.frame_interval_ms as f64);
             Ok(Clip {
                 id: id.to_owned(),
                 mp4,
+                telemetry: Some(ClipTelemetry {
+                    raw_frames: rec.raw_frames,
+                    dropped_frames: rec.dropped_frames,
+                    encoded_frames,
+                    duration_ms,
+                    effective_fps,
+                    requested_fps,
+                    max_raw_gap_ms: rec.max_raw_gap_ms,
+                }),
             })
         }
 

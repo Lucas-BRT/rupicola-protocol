@@ -227,6 +227,7 @@ pub(crate) mod flavour {
             Ok(Clip {
                 id: id.to_owned(),
                 mp4,
+                telemetry: None,
             })
         }
 

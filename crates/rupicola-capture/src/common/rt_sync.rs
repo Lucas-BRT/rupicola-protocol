@@ -10,6 +10,18 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 
+/// Maximum sleep slice when polling a blocking child pipe during recording waits.
+const SYNC_READ_POLL_MS: u64 = 4;
+
+/// Result of reading a delimited message from a child process with a timeout.
+pub(crate) enum ReadMessage {
+    #[allow(dead_code)]
+    Message(Vec<u8>),
+    Timeout,
+    #[allow(dead_code)]
+    Eof,
+}
+
 /// A process started for a session, with the pipes its command asked for. It is killed
 /// when dropped.
 pub(crate) struct Child {
@@ -64,6 +76,17 @@ impl Child {
             message.pop();
         }
         Ok(Some(message))
+    }
+
+    /// Sleeps briefly and reports [`ReadMessage::Timeout`] so the blocking runtime can poll CDP.
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    pub(crate) fn read_message_timeout(
+        &mut self,
+        _delimiter: u8,
+        timeout: Duration,
+    ) -> io::Result<ReadMessage> {
+        thread::sleep(timeout.min(Duration::from_millis(SYNC_READ_POLL_MS)));
+        Ok(ReadMessage::Timeout)
     }
 
     /// Reads one line from the process's stdout; `None` at the end of the stream.
