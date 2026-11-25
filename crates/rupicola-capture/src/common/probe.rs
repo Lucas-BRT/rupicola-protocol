@@ -118,8 +118,15 @@ pub(crate) mod flavour {
 
     async fn probe_cdp() -> BackendReport {
         let mut detected = Vec::new();
+        if let Some(env_bin) = crate::backend::CdpBackend::env_browser_bin()
+            && Runtime::is_file(&env_bin).await
+        {
+            detected.push(env_bin);
+        }
         for candidate in BROWSER_CANDIDATES {
-            if let Some(path) = Runtime::resolve_tool(Tool(candidate)).await {
+            if let Some(path) = Runtime::resolve_tool(Tool(candidate)).await
+                && !detected.contains(&path)
+            {
                 detected.push(path);
             }
         }
@@ -135,6 +142,7 @@ pub(crate) mod flavour {
             Capabilities::of(&[
                 Capability::Actions,
                 Capability::UiTree,
+                Capability::Video,
                 Capability::ColorScheme,
                 Capability::Scale,
                 Capability::FullPage,

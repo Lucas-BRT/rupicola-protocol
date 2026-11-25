@@ -113,3 +113,58 @@ async fn cdp_supports_actions_wait_and_full_page_without_playwright() {
     assert_eq!(input.value.as_deref(), Some("alice"));
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[tokio::test]
+async fn cdp_records_video_clip_without_playwright() {
+    let Some(backend) = CdpBackend::discover().await else {
+        return;
+    };
+
+    let (url, _srv) = serve_html();
+    let out = std::env::temp_dir().join("rupicola-cdp-video-test");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+
+    let mut env = Environment::new([800, VIEWPORT_HEIGHT]);
+    env.warmup_ms = 0;
+    env.network_policy = NetworkPolicy::Unrestricted;
+
+    let plan = Plan {
+        target: Target {
+            command: url,
+            args: Vec::new(),
+        },
+        environment: env,
+        steps: vec![
+            Step::Wait {
+                condition: WaitCondition::Visible {
+                    target_id: "css=#toggle".to_owned(),
+                },
+            },
+            Step::StartRecording,
+            Step::Action {
+                action: UiAction::Click {
+                    target_id: "css=#toggle".to_owned(),
+                },
+            },
+            Step::Action {
+                action: UiAction::WaitMs { ms: 160 },
+            },
+            Step::StopRecording {
+                id: "toggle-transition".to_owned(),
+            },
+        ],
+        allow_degraded: false,
+    };
+
+    let bundle = run_plan(&backend, &plan, &out).await.unwrap();
+    assert_eq!(bundle.clips.len(), 1);
+    let clip = &bundle.clips[0];
+    assert_eq!(clip.id, "toggle-transition");
+    assert!(
+        std::fs::metadata(&clip.mp4).unwrap().len() > 0,
+        "expected non-empty MP4 clip at {}",
+        clip.mp4.display()
+    );
+    let _ = std::fs::remove_dir_all(&out);
+}
