@@ -58,4 +58,7 @@ jobs:
       - name: Allow Chromium's sandbox (unprivileged user namespaces)
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install ffmpeg
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
       - run: cargo nextest run --locked --workspace
