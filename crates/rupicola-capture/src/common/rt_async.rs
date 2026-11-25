@@ -10,12 +10,20 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
+/// Result of reading a delimited message from a child process with a timeout.
+pub(crate) enum ReadMessage {
+    Message(Vec<u8>),
+    Timeout,
+    Eof,
+}
+
 /// A process started for a session, with the pipes its command asked for. It is killed
 /// when dropped.
 pub(crate) struct Child {
     inner: tokio::process::Child,
     stdin: Option<tokio::process::ChildStdin>,
     stdout: Option<BufReader<tokio::process::ChildStdout>>,
+    read_buf: Vec<u8>,
 }
 
 impl Child {
@@ -55,14 +63,29 @@ impl Child {
             .stdout
             .as_mut()
             .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
-        let mut message = Vec::new();
-        if stdout.read_until(delimiter, &mut message).await? == 0 {
+        if stdout.read_until(delimiter, &mut self.read_buf).await? == 0 && self.read_buf.is_empty()
+        {
             return Ok(None);
         }
-        if message.last() == Some(&delimiter) {
-            message.pop();
+        if self.read_buf.last() == Some(&delimiter) {
+            self.read_buf.pop();
         }
-        Ok(Some(message))
+        Ok(Some(std::mem::take(&mut self.read_buf)))
+    }
+
+    /// Reads one `delimiter`-terminated message, returning [`ReadMessage::Timeout`] if `timeout`
+    /// elapses first without losing any partial bytes already buffered.
+    pub(crate) async fn read_message_timeout(
+        &mut self,
+        delimiter: u8,
+        timeout: Duration,
+    ) -> io::Result<ReadMessage> {
+        match tokio::time::timeout(timeout, self.read_message(delimiter)).await {
+            Ok(Ok(Some(msg))) => Ok(ReadMessage::Message(msg)),
+            Ok(Ok(None)) => Ok(ReadMessage::Eof),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Ok(ReadMessage::Timeout),
+        }
     }
 
     /// Reads one line from the process's stdout; `None` at the end of the stream.
@@ -92,6 +115,7 @@ impl Runtime {
         Ok(Child {
             stdin: inner.stdin.take(),
             stdout: inner.stdout.take().map(BufReader::new),
+            read_buf: Vec::new(),
             inner,
         })
     }

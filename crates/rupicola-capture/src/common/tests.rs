@@ -115,6 +115,7 @@ mod flavour {
             Ok(Clip {
                 id: id.to_owned(),
                 mp4: PathBuf::from(format!("{id}.mp4")),
+                telemetry: None,
             })
         }
         async fn finish(self: Box<Self>) -> Result<(), CaptureError> {

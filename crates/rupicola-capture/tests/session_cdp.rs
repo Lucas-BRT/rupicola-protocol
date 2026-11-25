@@ -477,9 +477,94 @@ async fn cdp_records_compositor_frames_at_the_requested_interval_during_actions(
         .trim()
         .parse::<usize>()
         .unwrap();
+    let telemetry = clip
+        .telemetry
+        .as_ref()
+        .expect("CDP clip should include frame telemetry");
     assert!(
-        frames >= 15,
-        "expected dense compositor frames during the animation, got {frames}"
+        (telemetry.encoded_frames..=telemetry.encoded_frames + 1).contains(&frames),
+        "expected ffprobe frame count ({frames}) to match encoded_frames ({})",
+        telemetry.encoded_frames
+    );
+    assert_eq!(
+        telemetry.dropped_frames, 0,
+        "60 Hz compositor frames should not be dropped at interval_ms=16, telemetry: {telemetry:?}"
+    );
+    assert!(
+        telemetry.raw_frames >= 45 && frames >= 45,
+        "expected >= 45 compositor frames during 800ms animation at interval_ms=16, got raw={}, encoded={frames}, telemetry={telemetry:?}",
+        telemetry.raw_frames
+    );
+    assert!(
+        telemetry.max_raw_gap_ms.is_some_and(|gap| gap <= 80.0),
+        "expected dense compositor cadence without large stalls (max_raw_gap_ms <= 80.0), got {telemetry:?}"
+    );
+    assert!(
+        telemetry.effective_fps > 0.0,
+        "expected positive effective_fps, got {telemetry:?}"
+    );
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+#[tokio::test]
+async fn cdp_warns_when_idle_page_falls_below_requested_fps() {
+    let Some(backend) = CdpBackend::discover().await else {
+        return;
+    };
+    if Command::new("ffprobe").arg("-version").output().is_err() {
+        return;
+    }
+
+    let (url, _srv) = serve_html();
+    let out = std::env::temp_dir().join("rupicola-cdp-low-fps-warning-test");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+
+    let mut env = Environment::new([800, VIEWPORT_HEIGHT]);
+    env.warmup_ms = 0;
+    env.network_policy = NetworkPolicy::Unrestricted;
+    env.frame_interval_ms = Some(16);
+
+    let plan = Plan {
+        target: Target {
+            command: url,
+            args: Vec::new(),
+        },
+        environment: env,
+        steps: vec![
+            Step::Wait {
+                condition: WaitCondition::Visible {
+                    target_id: "css=#toggle".to_owned(),
+                },
+            },
+            Step::StartRecording,
+            Step::Wait {
+                condition: WaitCondition::Delay { ms: 600 },
+            },
+            Step::StopRecording {
+                id: "idle-clip".to_owned(),
+            },
+        ],
+        allow_degraded: false,
+    };
+
+    let bundle = run_plan(&backend, &plan, &out).await.unwrap();
+    let clip = &bundle.clips[0];
+    let telemetry = clip
+        .telemetry
+        .as_ref()
+        .expect("CDP clip should include frame telemetry");
+    assert!(
+        telemetry.effective_fps < 30.0,
+        "expected idle page effective_fps < 30.0, got {telemetry:?}"
+    );
+    assert!(
+        bundle
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("idle-clip") && warning.contains("below requested")),
+        "expected low-FPS warning in bundle.warnings, got {:?}",
+        bundle.warnings
     );
     let _ = std::fs::remove_dir_all(&out);
 }
